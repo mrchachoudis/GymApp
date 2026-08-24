@@ -1,0 +1,15 @@
+gymd
+*.db
+*.db-wal
+*.db-shm
+android/app/google-services.json
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.jks
+android/keystore.properties
+.auth_token
+gymd.exe
+*.apk
+android/gradle/wrapper/dists/

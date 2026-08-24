@@ -1,0 +1,9 @@
+# Checked out with LF everywhere. gradlew is executed by /bin/sh on the mini PC
+# and on CI; CRLF in it produces "bad interpreter" and nothing else useful.
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.jar binary
+*.jks binary
+*.apk binary
+*.png binary

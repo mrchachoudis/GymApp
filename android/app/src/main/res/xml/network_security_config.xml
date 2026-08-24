@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cleartext is denied everywhere by default: the production path is the
+     Cloudflare Tunnel hostname over HTTPS, and an app-wide
+     usesCleartextTraffic="true" would silently allow that to be downgraded.
+
+     The exceptions below are the LAN addresses used to test against gymd
+     before the tunnel exists. Android's network security config matches exact
+     hosts and has no CIDR syntax, so the mini PC's address is listed
+     literally: give it a DHCP reservation, or this needs editing every time
+     the lease moves. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">192.168.2.13</domain>
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>
