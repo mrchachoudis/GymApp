@@ -227,6 +227,12 @@ type claimOut struct {
 	Name    string  `json:"name"`
 	E1RMKg  float64 `json:"e1rm_kg"`
 	Lift    string  `json:"lift"`
+	// Anchor and Hint exist so the profile screen can say which lift a pattern
+	// means and what number to type. "Horizontal Press" is the spec's language,
+	// not a lifter's, and a field labelled only that is a guess waiting to
+	// happen.
+	Anchor string `json:"anchor"`
+	Hint   string `json:"hint"`
 }
 
 type skillOut struct {
@@ -310,6 +316,12 @@ func (s *Server) handleGetProfile(w http.ResponseWriter, r *http.Request) {
 	for _, pat := range berserk.Patterns {
 		c := claims[string(pat)]
 		c.Pattern, c.Name = string(pat), pat.Display()
+		c.Anchor = berserk.AnchorLift(pat)
+		if berserk.ScoredAgainstBodyweight(pat) {
+			c.Hint = "total load: bodyweight + anything added"
+		} else {
+			c.Hint = "bar weight in kg"
+		}
 		out.Claims = append(out.Claims, c)
 	}
 

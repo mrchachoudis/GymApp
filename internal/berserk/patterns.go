@@ -554,3 +554,19 @@ func PatternOf(liftName string) (Pattern, bool) {
 	}
 	return sub.pattern, true
 }
+
+// AnchorLift is the movement a pattern is measured against, and the one a user
+// should quote a best for.
+func AnchorLift(p Pattern) string { return anchors[p].liftName }
+
+// ScoredAgainstBodyweight reports whether a pattern's anchor is scored on total
+// system load rather than external load.
+//
+// It exists for the UI. The vertical pull anchor is a weighted pull-up scored
+// as bodyweight plus anything added, so a lifter asked for "your best" will
+// reasonably type the belt weight -- and a 10 where 110 was meant reads as a
+// catastrophically weak pattern and drags MIGHT down with it.
+func ScoredAgainstBodyweight(p Pattern) bool {
+	sub, ok := substitutes[anchors[p].liftName]
+	return ok && sub.bodyweightBased
+}

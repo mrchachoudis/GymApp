@@ -194,6 +194,11 @@ data class PatternClaim(
     val name: String = "",
     @SerialName("e1rm_kg") val e1rmKg: Double = 0.0,
     val lift: String = "",
+    // The lift the pattern is measured against, and what number to type. The
+    // server supplies both so the phone never has to keep its own copy of which
+    // movement anchors which pattern.
+    val anchor: String = "",
+    val hint: String = "",
 )
 
 @Serializable

@@ -288,38 +288,68 @@ private fun TrainingSection(
 private fun ClaimsSection(p: Profile, onSave: (String, Double, String) -> Unit) {
     Section("Known bests") {
         Muted(
-            "Estimated one-rep max per pattern, if you already know it. Self-reported " +
-                "numbers score at 93% and carry you to DREADBORN at most; the top two " +
-                "ranks need the app to have seen the lift.",
+            "Optional. Your estimated one-rep max for each movement pattern, if " +
+                "you already know it. Leave any of them blank — an untested " +
+                "pattern is estimated from the ones you have, and one logged " +
+                "working set replaces the guess with evidence.",
         )
+        Muted(
+            "Self-reported numbers score at 93% and carry you to DREADBORN at " +
+                "most; the top two ranks need the app to have seen the lift.",
+        )
+        Muted("No 1RM? Take a hard set of 8 reps or fewer: weight x (1 + reps / 30).")
+
         p.claims.forEach { c ->
             var v by remember(c.pattern, c.e1rmKg) {
                 mutableStateOf(if (c.e1rmKg > 0) fmt(c.e1rmKg) else "")
             }
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OutlinedTextField(
-                    value = v,
-                    onValueChange = { v = it },
-                    label = { Text(c.name, style = MaterialTheme.typography.bodySmall) },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    shape = RectangleShape,
-                    textStyle = Ledger,
-                    colors = forgeFieldColors(),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Decimal,
-                        imeAction = ImeAction.Next,
-                    ),
-                )
-                TextButton(
-                    onClick = { v.toDoubleOrNull()?.let { onSave(c.pattern, it, c.lift) } },
-                    enabled = v.toDoubleOrNull() != null,
-                    colors = ButtonDefaults.textButtonColors(contentColor = Forge.Ember),
-                ) { Text("SAVE", style = MaterialTheme.typography.labelMedium) }
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedTextField(
+                        value = v,
+                        onValueChange = { v = it },
+                        // The pattern is the spec's word; the anchor lift is the
+                        // one a lifter actually thinks in. Both are shown, with
+                        // the lift leading.
+                        label = {
+                            Text(
+                                if (c.anchor.isNotBlank())
+                                    "${c.anchor.replaceFirstChar { ch -> ch.uppercase() }}  ·  ${c.name}"
+                                else c.name,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        shape = RectangleShape,
+                        textStyle = Ledger,
+                        colors = forgeFieldColors(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Decimal,
+                            imeAction = ImeAction.Next,
+                        ),
+                    )
+                    TextButton(
+                        onClick = { v.toDoubleOrNull()?.let { onSave(c.pattern, it, c.lift) } },
+                        enabled = v.toDoubleOrNull() != null,
+                        colors = ButtonDefaults.textButtonColors(contentColor = Forge.Ember),
+                    ) { Text("SAVE", style = MaterialTheme.typography.labelMedium) }
+                }
+                if (c.hint.isNotBlank()) {
+                    // Bodyweight-anchored patterns get the loud version. Typing
+                    // the belt weight instead of the total is the single easiest
+                    // way to wreck this screen, and it fails silently.
+                    val bodyweightAnchored = c.hint.startsWith("total load")
+                    Text(
+                        c.hint,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (bodyweightAnchored) Forge.Ember else Forge.Slate,
+                    )
+                }
             }
         }
     }
