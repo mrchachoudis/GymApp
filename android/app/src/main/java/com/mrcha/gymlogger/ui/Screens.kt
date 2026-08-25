@@ -75,11 +75,16 @@ fun GymApp(
             )
             RailDivider()
 
+            // The shell does NOT scroll. Each tab owns its own scrolling,
+            // because a scrolling parent measures children with an infinite
+            // maximum height, and any lazy list placed inside one throws rather
+            // than degrading. That is what crashed the LIFTS tab; making the
+            // shell rigid removes the whole class of bug instead of the one
+            // instance of it.
             Column(
                 Modifier
                     .weight(1f)
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState()),
+                    .fillMaxSize(),
             ) {
                 // The wordmark sits above the content rather than in a title
                 // bar, so the rank name below it keeps the full width.
@@ -194,7 +199,10 @@ fun GymApp(
 @Composable
 private fun LedgerTab(vm: MainViewModel) {
     Column(
-        Modifier.padding(horizontal = 14.dp),
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         vm.rank?.let { RankCard(it) }

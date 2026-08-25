@@ -7,12 +7,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
@@ -57,7 +60,13 @@ fun LogScreen(
     onSubmit: () -> Unit,
     onRetry: () -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth()) {
+    // Scrolls itself. The shell is rigid so that lazy lists in sibling tabs are
+    // legal; that makes each tab responsible for its own overflow.
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+    ) {
         // A blank page is the worst possible answer to "is this working". If the
         // server cannot be reached, say so where the rank would have been.
         if (connection != ConnectionState.Ok && rank == null) {

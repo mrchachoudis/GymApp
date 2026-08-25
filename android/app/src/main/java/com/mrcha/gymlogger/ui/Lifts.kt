@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -34,7 +35,14 @@ import androidx.compose.ui.unit.dp
 import com.mrcha.gymlogger.net.LiftDetail
 import com.mrcha.gymlogger.net.LiftSummary
 
-/** LIFTS: what you actually train, most recent first. */
+/**
+ * LIFTS: what you actually train, most recent first.
+ *
+ * Scrolls itself, with a lazy list. Both matter: the shell is deliberately
+ * rigid, because a scrolling parent measures its children with an infinite
+ * maximum height and a lazy list measured that way throws rather than
+ * degrading. That combination is what crashed this tab.
+ */
 @Composable
 fun LiftsScreen(
     lifts: List<LiftSummary>,
@@ -90,6 +98,9 @@ fun LiftsScreen(
                             color = Forge.Slate,
                         )
                     }
+                    // Bodyweight lifts trained only above eight reps have no
+                    // honest estimated max, so the column is left blank rather
+                    // than showing a zero that looks like a regression.
                     if (lift.bestE1RM > 0) {
                         Text(
                             "%.0f".format(lift.bestE1RM),
@@ -100,6 +111,7 @@ fun LiftsScreen(
                 }
                 HairlineRule()
             }
+            item { Spacer(Modifier.height(24.dp)) }
         }
     }
 }
@@ -113,7 +125,7 @@ fun LiftsScreen(
 @Composable
 fun LiftDetailScreen(detail: LiftDetail?, onClose: () -> Unit) {
     if (detail == null) {
-        Column(Modifier.fillMaxSize().background(Forge.Ground)) {
+        Column(Modifier.fillMaxSize().background(Forge.Ground).systemBarsPadding()) {
             Text(
                 "LOADING",
                 Modifier.padding(20.dp),
@@ -128,6 +140,7 @@ fun LiftDetailScreen(detail: LiftDetail?, onClose: () -> Unit) {
         Modifier
             .fillMaxSize()
             .background(Forge.Ground)
+            .systemBarsPadding()
             .verticalScroll(rememberScrollState()),
     ) {
         // Header band.

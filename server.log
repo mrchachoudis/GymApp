@@ -1,0 +1,36 @@
+time=2026-08-25T23:47:09.006+03:00 level=WARN msg="OPENCODE_API_KEY not set, using the offline stub parser and coach"
+time=2026-08-25T23:47:09.009+03:00 level=WARN msg="FCM_CREDENTIALS not set, notifications will be logged instead of sent"
+time=2026-08-25T23:47:09.009+03:00 level=INFO msg="serving exercise media" dir="C:/Users/mrcha/Desktop/Gym App/openGym-main/openGym-main/media"
+time=2026-08-25T23:47:09.009+03:00 level=INFO msg=listening addr=0.0.0.0:8080 db="C:/Users/mrcha/Desktop/Gym App/gymlogger/gym.db" tz=Europe/Bucharest
+time=2026-08-25T23:47:09.131+03:00 level=INFO msg=http method=GET path=/healthz dur=0s
+time=2026-08-25T23:47:09.284+03:00 level=INFO msg=http method=GET path=/v1/lifts dur=1.5503ms
+time=2026-08-25T23:48:39.490+03:00 level=INFO msg=http method=GET path=/wyvrn/Synapse dur=0s
+time=2026-08-25T23:49:46.152+03:00 level=INFO msg=http method=GET path=/v1/rank dur=16.8373ms
+time=2026-08-25T23:49:46.278+03:00 level=INFO msg=http method=GET path=/v1/next dur=0s
+time=2026-08-25T23:49:46.307+03:00 level=INFO msg=http method=GET path=/v1/muscles dur=679.1µs
+time=2026-08-25T23:49:49.992+03:00 level=INFO msg=http method=GET path=/v1/lifts dur=503.8µs
+time=2026-08-25T23:49:51.198+03:00 level=INFO msg=http method=GET path=/v1/rank dur=3.8804ms
+time=2026-08-25T23:49:51.335+03:00 level=INFO msg=http method=GET path=/v1/next dur=503.5µs
+time=2026-08-25T23:49:51.359+03:00 level=INFO msg=http method=GET path=/v1/muscles dur=0s
+time=2026-08-25T23:49:52.417+03:00 level=INFO msg=http method=GET path=/v1/lifts dur=1.5053ms
+time=2026-08-25T23:49:54.636+03:00 level=INFO msg=http method=GET path=/v1/rank dur=3.5911ms
+time=2026-08-25T23:49:54.774+03:00 level=INFO msg=http method=GET path=/v1/next dur=0s
+time=2026-08-25T23:49:54.800+03:00 level=INFO msg=http method=GET path=/v1/muscles dur=0s
+time=2026-08-25T23:50:02.305+03:00 level=INFO msg=http method=GET path=/v1/profile dur=647.6µs
+time=2026-08-25T23:50:11.020+03:00 level=INFO msg=http method=POST path=/v1/body dur=3.6197ms
+time=2026-08-25T23:50:11.039+03:00 level=INFO msg=http method=GET path=/v1/profile dur=0s
+time=2026-08-25T23:50:11.051+03:00 level=INFO msg=http method=GET path=/v1/rank dur=3.3392ms
+time=2026-08-25T23:50:11.073+03:00 level=INFO msg=http method=GET path=/v1/next dur=0s
+time=2026-08-25T23:50:11.079+03:00 level=INFO msg=http method=GET path=/v1/muscles dur=0s
+time=2026-08-25T23:50:22.578+03:00 level=INFO msg=http method=POST path=/v1/profile dur=7.4181ms
+time=2026-08-25T23:50:22.593+03:00 level=INFO msg=http method=GET path=/v1/profile dur=1.0394ms
+time=2026-08-25T23:50:22.596+03:00 level=INFO msg=http method=GET path=/v1/rank dur=3.6687ms
+time=2026-08-25T23:50:22.621+03:00 level=INFO msg=http method=GET path=/v1/next dur=0s
+time=2026-08-25T23:50:22.631+03:00 level=INFO msg=http method=GET path=/v1/muscles dur=0s
+time=2026-08-25T23:50:56.205+03:00 level=INFO msg=http method=GET path=/v1/lifts dur=503.6µs
+time=2026-08-25T23:50:57.928+03:00 level=INFO msg=http method=GET path=/v1/rank dur=3.0991ms
+time=2026-08-25T23:50:58.183+03:00 level=INFO msg=http method=GET path=/v1/next dur=1.5038ms
+time=2026-08-25T23:50:58.204+03:00 level=INFO msg=http method=GET path=/v1/muscles dur=0s
+time=2026-08-25T23:51:21.335+03:00 level=INFO msg=http method=GET path=/v1/profile dur=0s
+time=2026-08-25T23:51:31.700+03:00 level=INFO msg=http method=GET path=/wyvrn/Synapse dur=0s
+time=2026-08-25T23:54:04.229+03:00 level=INFO msg=http method=GET path=/wyvrn/Synapse dur=0s
