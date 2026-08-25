@@ -23,6 +23,7 @@ import com.mrcha.gymlogger.net.LogResult
 import com.mrcha.gymlogger.net.MuscleReport
 import com.mrcha.gymlogger.net.Profile
 import com.mrcha.gymlogger.net.Rank
+import com.mrcha.gymlogger.net.Suggestion
 import com.mrcha.gymlogger.net.Recommendation
 import com.mrcha.gymlogger.push.GymMessagingService
 import com.mrcha.gymlogger.ui.ConnectionState
@@ -47,6 +48,8 @@ class MainViewModel : ViewModel() {
     var lifts by mutableStateOf<List<LiftSummary>>(emptyList())
     var liftDetail by mutableStateOf<LiftDetail?>(null)
     var showLiftDetail by mutableStateOf(false)
+    var suggestions by mutableStateOf<List<Suggestion>>(emptyList())
+    private var suggestSeq = 0
 
     /**
      * Whether the phone can reach the service.
@@ -185,6 +188,52 @@ class MainViewModel : ViewModel() {
                 .onSuccess { afterProfileWrite() }
                 .onFailure { error = it.message }
         }
+    }
+
+    // ---------- log autocomplete ----------
+
+    /**
+     * The fragment being typed: everything after the last separator.
+     *
+     * A session is written as "bench 100 x 5; dips bw x 12", so only the part
+     * after the last semicolon or newline is a name in progress. Matching the
+     * whole draft would keep offering suggestions for a lift already logged
+     * three clauses ago.
+     */
+    private fun activeFragment(text: String): String {
+        val cut = text.indexOfLast { it == ';' || it == '\n' }
+        return text.substring(cut + 1).trimStart()
+    }
+
+    fun refreshSuggestions() {
+        val client = api ?: return
+        val fragment = activeFragment(draft)
+        val seq = ++suggestSeq
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(180)
+            if (seq != suggestSeq) return@launch
+            client.suggest(fragment)
+                .onSuccess {
+                    // A slower request for "ben" must not overwrite the results
+                    // for "bench".
+                    if (seq == suggestSeq) suggestions = it.suggestions
+                }
+        }
+    }
+
+    /**
+     * Replaces the fragment being typed with the chosen snippet.
+     *
+     * Inserted as plain text rather than as structured state, because the whole
+     * app is built on a freeform line the parser reads. A suggestion is a
+     * shortcut to typing, so it stays editable: change the 100 to 102.5 and log
+     * it.
+     */
+    fun applySuggestion(snippet: String) {
+        val cut = draft.indexOfLast { it == ';' || it == '\n' }
+        val head = if (cut >= 0) draft.substring(0, cut + 1) + " " else ""
+        draft = head + snippet
+        suggestions = emptyList()
     }
 
     // ---------- lifts ----------

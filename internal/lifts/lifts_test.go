@@ -334,3 +334,160 @@ func TestSeriesNoteExplainsAnEmptyChart(t *testing.T) {
 		t.Errorf("a scoring lift needs no note, got %q", b.SeriesNote)
 	}
 }
+
+// ---------- autocomplete ----------
+
+// TestSuggestRemembersLastSession is the whole point of the feature: the
+// snippet comes back carrying the load and reps actually performed, so logging
+// again is an edit rather than retyping.
+func TestSuggestRemembersLastSession(t *testing.T) {
+	st := newStore(t)
+	logSets(t, st, "2026-08-10", "bench press", model.EquipBarbell, model.BasisTotal,
+		[2]float64{95, 5}, [2]float64{95, 5})
+	logSets(t, st, "2026-08-17", "bench press", model.EquipBarbell, model.BasisTotal,
+		[2]float64{100, 5}, [2]float64{100, 5}, [2]float64{100, 4})
+
+	out, err := Suggest(context.Background(), st, day(t, "2026-08-18"), "bench", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) == 0 {
+		t.Fatal("expected a suggestion for a lift trained yesterday")
+	}
+	s := out[0]
+	if s.Source != "history" {
+		t.Errorf("a trained lift should come from history, got %q", s.Source)
+	}
+	// The MOST RECENT session, not the first or the best.
+	if s.Snippet != "bench press 100 x 5, 5, 4" {
+		t.Errorf("snippet = %q, want the last session's line", s.Snippet)
+	}
+	if s.LastWeightKg != 100 {
+		t.Errorf("last weight = %.1f, want 100", s.LastWeightKg)
+	}
+}
+
+// TestSuggestUsesTopLoadNotBackoff: a backoff set is not the number you are
+// about to repeat.
+func TestSuggestUsesTopLoadNotBackoff(t *testing.T) {
+	st := newStore(t)
+	logSets(t, st, "2026-08-17", "squat", model.EquipBarbell, model.BasisTotal,
+		[2]float64{140, 5}, [2]float64{100, 8})
+
+	out, err := Suggest(context.Background(), st, day(t, "2026-08-18"), "squat", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out[0].LastWeightKg != 140 {
+		t.Errorf("expected the top load 140, got %.1f", out[0].LastWeightKg)
+	}
+}
+
+// TestSuggestBodyweightFormatting: "dips bw x 12, 10" has to round-trip through
+// the parser, so the snippet uses the same shorthand a user would type.
+func TestSuggestBodyweightFormatting(t *testing.T) {
+	st := newStore(t)
+	logSets(t, st, "2026-08-17", "dips", model.EquipBodyweight, model.BasisBW,
+		[2]float64{0, 12}, [2]float64{0, 10})
+
+	out, err := Suggest(context.Background(), st, day(t, "2026-08-18"), "dip", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) == 0 {
+		t.Fatal("no suggestion for dips")
+	}
+	if out[0].Snippet != "dips bw x 12, 10" {
+		t.Errorf("snippet = %q, want bodyweight shorthand", out[0].Snippet)
+	}
+}
+
+// TestSuggestEmptyQueryReturnsRecentHistory is what makes the box useful before
+// a single character is typed.
+func TestSuggestEmptyQueryReturnsRecentHistory(t *testing.T) {
+	st := newStore(t)
+	logSets(t, st, "2026-08-10", "squat", model.EquipBarbell, model.BasisTotal, [2]float64{140, 5})
+	logSets(t, st, "2026-08-17", "bench press", model.EquipBarbell, model.BasisTotal, [2]float64{100, 5})
+
+	out, err := Suggest(context.Background(), st, day(t, "2026-08-18"), "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected both lifts, got %d", len(out))
+	}
+	// Most recently trained first.
+	if out[0].Name != "bench press" {
+		t.Errorf("expected the newest lift first, got %q", out[0].Name)
+	}
+	for _, s := range out {
+		if s.Source != "history" {
+			t.Errorf("an empty query must not pull from the library, got %q", s.Name)
+		}
+	}
+}
+
+// TestSuggestFallsBackToLibrary: a movement never trained should still be
+// findable, but without a weight nobody has lifted.
+func TestSuggestFallsBackToLibrary(t *testing.T) {
+	st := newStore(t)
+	logSets(t, st, "2026-08-17", "bench press", model.EquipBarbell, model.BasisTotal, [2]float64{100, 5})
+
+	out, err := Suggest(context.Background(), st, day(t, "2026-08-18"), "romanian", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) == 0 {
+		t.Fatal("expected library results for an untrained movement")
+	}
+	for _, s := range out {
+		if s.Source != "library" {
+			continue
+		}
+		if s.LastWeightKg != 0 {
+			t.Errorf("a library entry must not carry a weight, got %.1f", s.LastWeightKg)
+		}
+	}
+}
+
+// TestSuggestHistoryOutranksLibrary: the lift you did last Tuesday beats the
+// 900th entry in a catalogue.
+func TestSuggestHistoryOutranksLibrary(t *testing.T) {
+	st := newStore(t)
+	logSets(t, st, "2026-08-17", "bench press", model.EquipBarbell, model.BasisTotal, [2]float64{100, 5})
+
+	out, err := Suggest(context.Background(), st, day(t, "2026-08-18"), "bench", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out[0].Source != "history" {
+		t.Fatalf("history should lead, got %q from %q", out[0].Name, out[0].Source)
+	}
+	seenLibrary := false
+	for _, s := range out {
+		if s.Source == "library" {
+			seenLibrary = true
+		} else if seenLibrary {
+			t.Error("history entries must all precede library entries")
+			break
+		}
+	}
+}
+
+func TestSuggestNoDuplicatesBetweenSources(t *testing.T) {
+	st := newStore(t)
+	logSets(t, st, "2026-08-17", "barbell bench press", model.EquipBarbell, model.BasisTotal,
+		[2]float64{100, 5})
+
+	out, err := Suggest(context.Background(), st, day(t, "2026-08-18"), "bench press", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, s := range out {
+		if seen[s.Name] {
+			t.Errorf("%q appears twice", s.Name)
+		}
+		seen[s.Name] = true
+	}
+}

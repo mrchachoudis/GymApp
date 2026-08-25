@@ -123,7 +123,12 @@ fun GymApp(
                         draft = vm.draft,
                         busy = vm.busy,
                         connection = vm.connection,
-                        onDraftChange = { vm.draft = it },
+                        suggestions = vm.suggestions,
+                        onDraftChange = {
+                            vm.draft = it
+                            vm.refreshSuggestions()
+                        },
+                        onPickSuggestion = vm::applySuggestion,
                         onMic = onMic,
                         onSubmit = { vm.submit() },
                         onRetry = { vm.refresh() },

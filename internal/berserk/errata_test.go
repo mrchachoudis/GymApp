@@ -749,3 +749,33 @@ func TestNavyBodyFatMonotonic(t *testing.T) {
 		prev = got
 	}
 }
+
+// TestCommonShorthandScores guards a silent hole in the rank system.
+//
+// The parser is meant to canonicalise "bench" to "bench press", and with a real
+// model it does. The offline stub does not, and an unmapped name does not error
+// -- it simply contributes nothing to MIGHT, forever, with nothing anywhere
+// saying so. A real session logged as "bench 100 x 5" was worth zero.
+func TestCommonShorthandScores(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want Pattern
+	}{
+		{"bench", HPress},
+		{"ohp", VPress},
+		{"dl", Hinge},
+		{"row", HPull},
+		{"pullup", VPull},
+		{"pullups", VPull},
+		{"dip", HPress},
+	} {
+		got, ok := PatternOf(tc.name)
+		if !ok {
+			t.Errorf("%q scores nothing", tc.name)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("%q -> %s, want %s", tc.name, got, tc.want)
+		}
+	}
+}

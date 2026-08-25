@@ -115,6 +115,23 @@ func (b *Builder) Build(ctx context.Context, sessionID int64) (*Context, error) 
 	})
 
 	c.Suggestion = b.suggestion(c)
+
+	// A nil slice marshals to JSON null, and a client that declares these as
+	// arrays fails to decode rather than falling back to a default. That broke
+	// logging outright: the session was stored, the coach replied, and the
+	// phone threw on "flags":null while parsing the response.
+	//
+	// Guaranteeing empty arrays here is also just correct for the wire format --
+	// "no flags" is [], not null.
+	if c.Flags == nil {
+		c.Flags = []Flag{}
+	}
+	if c.LiftHistory == nil {
+		c.LiftHistory = []LiftEntry{}
+	}
+	if c.StaleLifts == nil {
+		c.StaleLifts = []StaleLift{}
+	}
 	return c, nil
 }
 

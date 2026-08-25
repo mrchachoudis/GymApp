@@ -145,6 +145,21 @@ type substitute struct {
 // leg press: without a per-machine calibration the number is unanchored, so it
 // may support a mid-range score and no more.
 var substitutes = map[string]substitute{
+	// Gym shorthand. The parser is supposed to canonicalise these, and with a
+	// real model it does -- but the offline stub does not, and a lift that
+	// silently scores nothing is the worst possible failure for a rank system.
+	// A session logged as "bench 100 x 5" contributed zero to MIGHT until these
+	// existed, with no error anywhere.
+	"bench":    {HPress, 1.00, 1.00, 0, false},
+	"ohp":      {VPress, 1.00, 1.00, 0, false},
+	"dl":       {Hinge, 1.00, 1.00, 0, false},
+	"row":      {HPull, 1.00, 1.00, 0, false},
+	"pullup":   {VPull, 1.00, 1.00, 0, true},
+	"pull ups": {VPull, 1.00, 1.00, 0, true},
+	"pullups":  {VPull, 1.00, 1.00, 0, true},
+	"chinup":   {VPull, 0.95, 0.95, 0, true},
+	"dip":      {HPress, 0.92, 0.95, 0, true},
+
 	// Horizontal press
 	"bench press":          {HPress, 1.00, 1.00, 0, false},
 	"paused bench press":   {HPress, 1.06, 0.95, 0, false},

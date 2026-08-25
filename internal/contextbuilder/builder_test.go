@@ -1,7 +1,9 @@
 package contextbuilder
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
@@ -356,5 +358,45 @@ func TestDaysSinceLastRestCountsConsecutiveDays(t *testing.T) {
 	c, _ := New(st).Build(context.Background(), id)
 	if c.DaysSinceLastRest != 4 {
 		t.Fatalf("four consecutive training days expected, got %d", c.DaysSinceLastRest)
+	}
+}
+
+// TestContextSlicesAreNeverNil guards a bug that broke logging end to end.
+//
+// A nil Go slice marshals to JSON null. The phone declares flags, lift_history
+// and stale_lifts as arrays, and kotlinx.serialization refuses null for a
+// non-nullable list even when the field has a default -- so the session was
+// saved, the coach replied, and the app threw
+// "Expected start of the array '[', but had 'n' instead at path $.context.flags"
+// while decoding the response.
+func TestContextSlicesAreNeverNil(t *testing.T) {
+	st := newStore(t)
+	// A minimal session with nothing remarkable: no pain, no PRs, no stale
+	// lifts, so every one of these slices is naturally empty.
+	id := logSession(t, st, "2026-08-20", bench(100, 5, 5, 5))
+
+	c, err := New(st).Build(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Flags == nil {
+		t.Error("Flags is nil and would marshal to null")
+	}
+	if c.LiftHistory == nil {
+		t.Error("LiftHistory is nil and would marshal to null")
+	}
+	if c.StaleLifts == nil {
+		t.Error("StaleLifts is nil and would marshal to null")
+	}
+
+	// And prove it at the wire level, which is where the failure actually was.
+	blob, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{`"flags":null`, `"lift_history":null`, `"stale_lifts":null`} {
+		if bytes.Contains(blob, []byte(field)) {
+			t.Errorf("serialized context contains %s", field)
+		}
 	}
 }

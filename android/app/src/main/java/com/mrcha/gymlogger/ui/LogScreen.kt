@@ -2,6 +2,7 @@ package com.mrcha.gymlogger.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,6 +37,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.mrcha.gymlogger.net.MuscleReport
 import com.mrcha.gymlogger.net.Rank
+import com.mrcha.gymlogger.net.Suggestion
 import com.mrcha.gymlogger.net.Recommendation
 
 /**
@@ -55,7 +57,9 @@ fun LogScreen(
     draft: String,
     busy: Boolean,
     connection: ConnectionState,
+    suggestions: List<Suggestion>,
     onDraftChange: (String) -> Unit,
+    onPickSuggestion: (String) -> Unit,
     onMic: () -> Unit,
     onSubmit: () -> Unit,
     onRetry: () -> Unit,
@@ -83,7 +87,7 @@ fun LogScreen(
             HairlineRule()
         }
 
-        InputBand(draft, busy, onDraftChange, onMic, onSubmit)
+        InputBand(draft, busy, suggestions, onDraftChange, onPickSuggestion, onMic, onSubmit)
 
         muscles?.let {
             HairlineRule()
@@ -206,7 +210,9 @@ private fun UpNextBand(rec: Recommendation) {
 private fun InputBand(
     draft: String,
     busy: Boolean,
+    suggestions: List<Suggestion>,
     onChange: (String) -> Unit,
+    onPick: (String) -> Unit,
     onMic: () -> Unit,
     onSubmit: () -> Unit,
 ) {
@@ -254,6 +260,8 @@ private fun InputBand(
                     ),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
                 )
+
+                SuggestionList(suggestions, onPick)
 
                 // LOG IT takes the width; the mic is a small square beside it,
                 // as in the mockup. Logging is the act, dictation is the input
@@ -352,6 +360,63 @@ private fun MuscleBand(report: MuscleReport) {
 
         if (report.unmatched.isNotEmpty()) {
             Muted("not mapped to a muscle group: " + report.unmatched.joinToString(", "))
+        }
+    }
+}
+
+/**
+ * Autocomplete under the log box.
+ *
+ * Each row inserts a line that already carries the load and reps from the last
+ * time the lift was trained, so a normal session is a tap plus one edited
+ * number rather than a sentence typed from scratch.
+ *
+ * A history row shows what was actually done last time and is the reason the
+ * feature exists; a library row is just a name, because offering a weight for a
+ * movement nobody has performed would be a fabrication.
+ */
+@Composable
+private fun SuggestionList(suggestions: List<Suggestion>, onPick: (String) -> Unit) {
+    if (suggestions.isEmpty()) return
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(max = 210.dp)
+            .verticalScroll(rememberScrollState()),
+    ) {
+        suggestions.forEach { s ->
+            val fromHistory = s.source == "history"
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { onPick(s.snippet) }
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        s.display.ifBlank { s.name },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (fromHistory) Forge.Parchment else Forge.Ash,
+                    )
+                    if (s.detail.isNotBlank()) {
+                        Text(
+                            s.detail,
+                            style = Ledger,
+                            color = if (fromHistory) Forge.Ember else Forge.Slate,
+                        )
+                    }
+                }
+                if (!fromHistory) {
+                    Text(
+                        "NEW",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Forge.Slate,
+                    )
+                }
+            }
+            HairlineRule()
         }
     }
 }

@@ -320,6 +320,24 @@ data class LiftDetail(
 data class LiftList(val lifts: List<LiftSummary> = emptyList())
 
 @Serializable
+data class Suggestion(
+    val name: String = "",
+    val display: String = "",
+    val equipment: String = "",
+    // Text ready to drop into the log box, already carrying the load and reps
+    // from the last time this lift was trained.
+    val snippet: String = "",
+    val detail: String = "",
+    @SerialName("last_weight_kg") val lastWeightKg: Double = 0.0,
+    @SerialName("last_date") val lastDate: String = "",
+    val sessions: Int = 0,
+    val source: String = "",
+)
+
+@Serializable
+data class SuggestList(val suggestions: List<Suggestion> = emptyList())
+
+@Serializable
 data class LogResult(
     @SerialName("session_id") val sessionId: Long = 0,
     @SerialName("pending_id") val pendingId: Long = 0,
@@ -359,6 +377,12 @@ class ApiClient(
         ignoreUnknownKeys = true
         encodeDefaults = true
         explicitNulls = false
+        // Defence in depth against a null where an array was declared. A nil Go
+        // slice marshals to null, and without this a single such field throws
+        // and takes the whole response with it -- which is how "flags":null
+        // broke logging even though the session had already been saved.
+        // The server is fixed too; this stops the next one being fatal.
+        coerceInputValues = true
     }
 
     // The log endpoint waits on two model calls, so the read timeout is
@@ -404,6 +428,9 @@ class ApiClient(
     suspend fun profile(): Result<Profile> = get("/v1/profile")
 
     suspend fun lifts(): Result<LiftList> = get("/v1/lifts")
+
+    suspend fun suggest(q: String): Result<SuggestList> =
+        get("/v1/suggest?q=" + q.encodeParam())
 
     suspend fun lift(key: String): Result<LiftDetail> =
         get("/v1/lifts/" + key.encodeParam())

@@ -76,6 +76,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /v1/blood", s.auth(http.HandlerFunc(s.handleBlood)))
 	mux.Handle("GET /v1/muscles", s.auth(http.HandlerFunc(s.handleMuscles)))
 	mux.Handle("GET /v1/lifts", s.auth(http.HandlerFunc(s.handleLifts)))
+	mux.Handle("GET /v1/suggest", s.auth(http.HandlerFunc(s.handleSuggest)))
 	mux.Handle("GET /v1/lifts/{key}", s.auth(http.HandlerFunc(s.handleLift)))
 
 	// Exercise library.
@@ -696,6 +697,22 @@ func (s *Server) handleLifts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"lifts": out})
+}
+
+// handleSuggest powers the log box's autocomplete.
+func (s *Server) handleSuggest(w http.ResponseWriter, r *http.Request) {
+	limit := 0
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			limit = n
+		}
+	}
+	out, err := lifts.Suggest(r.Context(), s.Store, time.Now(), r.URL.Query().Get("q"), limit)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"suggestions": out})
 }
 
 func (s *Server) handleLift(w http.ResponseWriter, r *http.Request) {
