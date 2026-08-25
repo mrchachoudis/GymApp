@@ -8,6 +8,7 @@ package api
 import (
 	"context"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 	"github.com/mrcha/gymlogger/internal/app"
 	"github.com/mrcha/gymlogger/internal/berserk"
 	"github.com/mrcha/gymlogger/internal/exercises"
+	"github.com/mrcha/gymlogger/internal/lifts"
 	"github.com/mrcha/gymlogger/internal/model"
 	"github.com/mrcha/gymlogger/internal/muscle"
 	"github.com/mrcha/gymlogger/internal/push"
@@ -73,6 +75,8 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /v1/skills", s.auth(http.HandlerFunc(s.handleSkills)))
 	mux.Handle("GET /v1/blood", s.auth(http.HandlerFunc(s.handleBlood)))
 	mux.Handle("GET /v1/muscles", s.auth(http.HandlerFunc(s.handleMuscles)))
+	mux.Handle("GET /v1/lifts", s.auth(http.HandlerFunc(s.handleLifts)))
+	mux.Handle("GET /v1/lifts/{key}", s.auth(http.HandlerFunc(s.handleLift)))
 
 	// Exercise library.
 	mux.Handle("GET /v1/exercises", s.auth(http.HandlerFunc(s.handleExercises)))
@@ -671,6 +675,33 @@ func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
 	// scroll.
 	w.Header().Set("Cache-Control", "public, max-age=604800, immutable")
 	http.ServeFile(w, r, full)
+}
+
+func (s *Server) handleLifts(w http.ResponseWriter, r *http.Request) {
+	out, err := lifts.List(r.Context(), s.Store, time.Now())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"lifts": out})
+}
+
+func (s *Server) handleLift(w http.ResponseWriter, r *http.Request) {
+	name, equipment, basis, ok := lifts.ParseKey(r.PathValue("key"))
+	if !ok {
+		writeErr(w, http.StatusBadRequest, errors.New("bad lift key"))
+		return
+	}
+	d, err := lifts.Get(r.Context(), s.Store, time.Now(), name, equipment, basis)
+	if err == sql.ErrNoRows {
+		writeErr(w, http.StatusNotFound, errors.New("no working sets for that lift"))
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, d)
 }
 
 func (s *Server) handleNext(w http.ResponseWriter, r *http.Request) {

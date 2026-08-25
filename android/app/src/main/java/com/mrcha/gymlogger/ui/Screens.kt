@@ -67,7 +67,7 @@ fun GymApp(
                 onSelect = { tab ->
                     vm.rail = tab
                     when (tab) {
-                        Rail.Lifts -> vm.openLibrary()
+                        Rail.Lifts -> vm.loadLifts()
                         Rail.RankTab -> vm.openProfile()
                         else -> Unit
                     }
@@ -106,6 +106,11 @@ fun GymApp(
 
                 when (vm.rail) {
                     Rail.Ledger -> LedgerTab(vm)
+                    Rail.Lifts -> LiftsScreen(
+                        lifts = vm.lifts,
+                        onOpen = vm::openLift,
+                        onBrowseLibrary = { vm.openLibrary() },
+                    )
                     else -> LogScreen(
                         rank = vm.rank,
                         next = vm.next,
@@ -133,6 +138,13 @@ fun GymApp(
                 onClose = { vm.showVerdict = false },
             )
         }
+    }
+
+    if (vm.showLiftDetail) {
+        LiftDetailScreen(
+            detail = vm.liftDetail,
+            onClose = { vm.showLiftDetail = false },
+        )
     }
 
     if (vm.showProfile) {

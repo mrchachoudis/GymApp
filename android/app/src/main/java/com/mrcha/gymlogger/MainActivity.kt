@@ -17,6 +17,8 @@ import androidx.lifecycle.viewModelScope
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import com.mrcha.gymlogger.net.ApiClient
+import com.mrcha.gymlogger.net.LiftDetail
+import com.mrcha.gymlogger.net.LiftSummary
 import com.mrcha.gymlogger.net.LogResult
 import com.mrcha.gymlogger.net.MuscleReport
 import com.mrcha.gymlogger.net.Profile
@@ -42,6 +44,9 @@ class MainViewModel : ViewModel() {
     var showSettings by mutableStateOf(false)
     var rail by mutableStateOf(Rail.Log)
     var showVerdict by mutableStateOf(false)
+    var lifts by mutableStateOf<List<LiftSummary>>(emptyList())
+    var liftDetail by mutableStateOf<LiftDetail?>(null)
+    var showLiftDetail by mutableStateOf(false)
 
     /**
      * Whether the phone can reach the service.
@@ -179,6 +184,33 @@ class MainViewModel : ViewModel() {
             client.saveSkill(skill, unlocked)
                 .onSuccess { afterProfileWrite() }
                 .onFailure { error = it.message }
+        }
+    }
+
+    // ---------- lifts ----------
+
+    fun loadLifts() {
+        val client = api ?: return
+        viewModelScope.launch {
+            client.lifts()
+                .onSuccess { lifts = it.lifts }
+                .onFailure { error = it.message }
+        }
+    }
+
+    fun openLift(key: String) {
+        val client = api ?: return
+        // Cleared first so the previous lift's chart does not sit on screen
+        // under the new title while the request is in flight.
+        liftDetail = null
+        showLiftDetail = true
+        viewModelScope.launch {
+            client.lift(key)
+                .onSuccess { liftDetail = it }
+                .onFailure {
+                    error = it.message
+                    showLiftDetail = false
+                }
         }
     }
 

@@ -541,3 +541,16 @@ func IsScored(liftName string) bool {
 	_, ok := substitutes[liftName]
 	return ok
 }
+
+// PatternOf reports which movement pattern a lift belongs to.
+//
+// Exported so other packages can classify a lift against the same table the
+// rank engine uses, rather than keeping a second opinion about whether a
+// Romanian deadlift is a hinge.
+func PatternOf(liftName string) (Pattern, bool) {
+	sub, ok := substitutes[liftName]
+	if !ok {
+		return "", false
+	}
+	return sub.pattern, true
+}

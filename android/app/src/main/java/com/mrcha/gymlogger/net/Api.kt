@@ -263,6 +263,58 @@ private data class ClaimsUpdate(val claims: List<ClaimIn>)
 private data class SkillsUpdate(val skills: Map<String, Boolean>)
 
 @Serializable
+data class LiftSummary(
+    val key: String = "",
+    val name: String = "",
+    val display: String = "",
+    val equipment: String = "",
+    @SerialName("load_basis") val loadBasis: String = "",
+    val sessions: Int = 0,
+    @SerialName("last_date") val lastDate: String = "",
+    @SerialName("best_e1rm_kg") val bestE1RM: Double = 0.0,
+)
+
+@Serializable
+data class LiftPoint(
+    val week: String = "",
+    val date: String = "",
+    @SerialName("e1rm_kg") val e1rm: Double = 0.0,
+    // A week with no qualifying set. Drawn as a stub rather than a zero bar:
+    // a bar at the floor reads as a collapse in strength, not as a rest week.
+    val empty: Boolean = false,
+)
+
+@Serializable
+data class LiftRecord(
+    val label: String = "",
+    val value: String = "",
+    val date: String = "",
+    @SerialName("is_today") val isToday: Boolean = false,
+)
+
+@Serializable
+data class LiftDetail(
+    val key: String = "",
+    val name: String = "",
+    val display: String = "",
+    val equipment: String = "",
+    @SerialName("load_basis") val loadBasis: String = "",
+    val sessions: Int = 0,
+    @SerialName("best_e1rm_kg") val bestE1RM: Double = 0.0,
+    val level: String = "",
+    @SerialName("bw_multiple") val bwMultiple: Double = 0.0,
+    val pattern: String = "",
+    val series: List<LiftPoint> = emptyList(),
+    val records: List<LiftRecord> = emptyList(),
+    @SerialName("series_note") val seriesNote: String = "",
+    @SerialName("next_step") val nextStep: String = "",
+    @SerialName("next_step_why") val nextStepWhy: String = "",
+)
+
+@Serializable
+data class LiftList(val lifts: List<LiftSummary> = emptyList())
+
+@Serializable
 data class LogResult(
     @SerialName("session_id") val sessionId: Long = 0,
     @SerialName("pending_id") val pendingId: Long = 0,
@@ -345,6 +397,11 @@ class ApiClient(
     suspend fun facets(): Result<Facets> = get("/v1/exercises/facets")
 
     suspend fun profile(): Result<Profile> = get("/v1/profile")
+
+    suspend fun lifts(): Result<LiftList> = get("/v1/lifts")
+
+    suspend fun lift(key: String): Result<LiftDetail> =
+        get("/v1/lifts/" + key.encodeParam())
 
     suspend fun saveProfile(
         heightCm: Double? = null,

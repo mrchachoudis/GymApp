@@ -1,4 +1,0 @@
-time=2026-08-25T23:22:43.582+03:00 level=WARN msg="OPENCODE_API_KEY not set, using the offline stub parser and coach"
-time=2026-08-25T23:22:43.584+03:00 level=WARN msg="FCM_CREDENTIALS not set, notifications will be logged instead of sent"
-time=2026-08-25T23:22:43.584+03:00 level=INFO msg="serving exercise media" dir="C:/Users/mrcha/Desktop/Gym App/openGym-main/openGym-main/media"
-time=2026-08-25T23:22:43.584+03:00 level=INFO msg=listening addr=0.0.0.0:8080 db="C:/Users/mrcha/Desktop/Gym App/gymlogger/gym.db" tz=Europe/Bucharest
