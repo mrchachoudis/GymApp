@@ -28,6 +28,13 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,9 +76,15 @@ fun ProfileScreen(
     onClose: () -> Unit,
 ) {
     Scaffold(
+        containerColor = Forge.Ground,
         topBar = {
             TopAppBar(
-                title = { Text("Profile") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Forge.Ground,
+                    titleContentColor = Forge.Bone,
+                    actionIconContentColor = Forge.Ash,
+                ),
+                title = { Text("PROFILE", style = MaterialTheme.typography.titleSmall) },
                 actions = {
                     IconButton(onClick = onClose) {
                         Icon(Icons.Default.Close, contentDescription = "Close")
@@ -81,7 +94,12 @@ fun ProfileScreen(
         },
     ) { padding ->
         if (profile == null) {
-            Text("Loading…", Modifier.padding(padding).padding(24.dp))
+            Text(
+                "LOADING",
+                Modifier.padding(padding).padding(24.dp),
+                style = MaterialTheme.typography.labelMedium,
+                color = Forge.Slate,
+            )
             return@Scaffold
         }
 
@@ -115,17 +133,14 @@ private fun MissingCard(p: Profile) {
         "training_months" to "Training age — worth 25% of DISCIPLINE, reads zero without it",
         "vo2max_est" to "VO₂max — worth 30% of VIGOR, reads zero without it",
     )
-    Card(
-        Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer,
-        ),
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Missing inputs", style = MaterialTheme.typography.titleSmall)
-            p.missing.forEach { key ->
-                Text("· " + (labels[key] ?: key), style = MaterialTheme.typography.bodySmall)
-            }
+    ForgePanel(accent = Forge.Blood) {
+        SectionLabel("Missing inputs", accent = Forge.BloodBright)
+        p.missing.forEach { key ->
+            Text(
+                labels[key] ?: key,
+                style = MaterialTheme.typography.bodySmall,
+                color = Forge.Parchment,
+            )
         }
     }
 }
@@ -133,37 +148,29 @@ private fun MissingCard(p: Profile) {
 /** The numbers the engine actually computes with. */
 @Composable
 private fun DerivedCard(p: Profile) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Derived", style = MaterialTheme.typography.titleSmall)
+    ForgePanel {
+        SectionLabel("Derived")
+        LedgerRow("lean mass", "%.1f kg".format(p.lbmKg))
+        LedgerRow("FFMI", "%.1f".format(p.ffmiAdj))
+        LedgerRow(
+            "body fat",
+            "%.1f%% (%s)".format(p.bodyfatPct, p.bfSource),
+            valueColor = if (p.estimated) Forge.Ember else Forge.Parchment,
+        )
+        if (p.estimated) {
+            Muted("Estimated from BMI. A tape or caliper measurement tightens every reference below.")
+        }
+        if (p.frozen) {
             Text(
-                "lean mass %.1f kg   ·   FFMI %.1f".format(p.lbmKg, p.ffmiAdj),
-                style = MaterialTheme.typography.bodyMedium,
-                fontFamily = FontFamily.Monospace,
-            )
-            Text(
-                "body fat %.1f%% (%s)".format(p.bodyfatPct, p.bfSource),
+                "References frozen: body fat moved more than 4 points in 30 days. Re-measure to unfreeze.",
                 style = MaterialTheme.typography.bodySmall,
-                color = if (p.estimated) MaterialTheme.colorScheme.error
-                else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = Forge.BloodBright,
             )
-            if (p.frozen) {
-                Text(
-                    "References are frozen: body fat moved more than 4 points in 30 days. Re-measure to unfreeze.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
+        }
 
-            HorizontalDivider(Modifier.padding(vertical = 4.dp))
-            Text("Loads that score 100", style = MaterialTheme.typography.labelMedium)
-            p.references.forEach { r ->
-                Text(
-                    "%-18s %6.1f kg".format(r.name, r.refKg),
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                )
-            }
+        SectionLabel("Loads that score 100")
+        p.references.forEach { r ->
+            LedgerRow(r.name, "%.1f kg".format(r.refKg))
         }
     }
 }
@@ -191,26 +198,16 @@ private fun BodySection(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            FilterChip(
-                selected = !tape,
-                onClick = { tape = false },
-                label = { Text("Enter body fat") },
-            )
-            FilterChip(
-                selected = tape,
-                onClick = { tape = true },
-                label = { Text("Tape method") },
-            )
+            ForgeChip("Enter body fat", !tape) { tape = false }
+            ForgeChip("Tape method", tape) { tape = true }
         }
 
         if (tape) {
             // The formula needs height, which the profile already holds, so it
             // is not asked for twice.
-            Text(
+            Muted(
                 "Measured at the narrowest point of the neck and at the navel." +
                     if (p.sex == "female") " Hip at the widest point." else "",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             NumField("Neck (cm)", neck) { neck = it }
             NumField("Waist (cm)", waist) { waist = it }
@@ -223,7 +220,9 @@ private fun BodySection(
                     onSaveTape(w, n, wa, hip.toDoubleOrNull())
                 },
                 enabled = !busy && weight.isNotBlank() && neck.isNotBlank() && waist.isNotBlank(),
-            ) { Text("Calculate and save") }
+                shape = RectangleShape,
+                colors = forgeButtonColors(),
+            ) { Text("CALCULATE AND SAVE", style = MaterialTheme.typography.labelMedium) }
         } else {
             NumField("Body fat (%) — leave blank if unknown", bodyfat) { bodyfat = it }
             Button(
@@ -232,7 +231,9 @@ private fun BodySection(
                     onSaveBody(w, bodyfat.toDoubleOrNull())
                 },
                 enabled = !busy && weight.isNotBlank(),
-            ) { Text("Save") }
+                shape = RectangleShape,
+                colors = forgeButtonColors(),
+            ) { Text("SAVE", style = MaterialTheme.typography.labelMedium) }
         }
     }
 }
@@ -252,28 +253,28 @@ private fun TrainingSection(
         NumField("Height (cm)", height) { height = it }
         NumField("Training age (months)", months) { months = it }
         NumField("VO₂max estimate", vo2) { vo2 = it }
-        Text(
+        Muted(
             "VIGOR needs about 34 to clear its gate — roughly a brisk four-flight " +
                 "stair climb without stopping. Leave blank only if you truly do not know.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         LabelledChips("Sex", listOf("male", "female"), sex) { sex = it }
         LabelledChips("Goal", listOf("balanced", "power", "physique"), goal) { goal = it }
-        Text(
+        Muted(
             "A goal profile shifts at most 0.06 of weight between MIGHT, FRAME and " +
                 "VIGOR. The Berserk gates never move.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
-        Button(onClick = {
-            onSave(
-                height.toDoubleOrNull(), sex,
-                months.toDoubleOrNull(), vo2.toDoubleOrNull(), goal,
-            )
-        }) { Text("Save") }
+        Button(
+            onClick = {
+                onSave(
+                    height.toDoubleOrNull(), sex,
+                    months.toDoubleOrNull(), vo2.toDoubleOrNull(), goal,
+                )
+            },
+            shape = RectangleShape,
+            colors = forgeButtonColors(),
+        ) { Text("SAVE", style = MaterialTheme.typography.labelMedium) }
     }
 }
 
@@ -286,12 +287,10 @@ private fun TrainingSection(
 @Composable
 private fun ClaimsSection(p: Profile, onSave: (String, Double, String) -> Unit) {
     Section("Known bests") {
-        Text(
+        Muted(
             "Estimated one-rep max per pattern, if you already know it. Self-reported " +
                 "numbers score at 93% and carry you to DREADBORN at most; the top two " +
                 "ranks need the app to have seen the lift.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         p.claims.forEach { c ->
             var v by remember(c.pattern, c.e1rmKg) {
@@ -305,9 +304,12 @@ private fun ClaimsSection(p: Profile, onSave: (String, Double, String) -> Unit) 
                 OutlinedTextField(
                     value = v,
                     onValueChange = { v = it },
-                    label = { Text(c.name) },
+                    label = { Text(c.name, style = MaterialTheme.typography.bodySmall) },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
+                    shape = RectangleShape,
+                    textStyle = Ledger,
+                    colors = forgeFieldColors(),
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Decimal,
                         imeAction = ImeAction.Next,
@@ -316,7 +318,8 @@ private fun ClaimsSection(p: Profile, onSave: (String, Double, String) -> Unit) 
                 TextButton(
                     onClick = { v.toDoubleOrNull()?.let { onSave(c.pattern, it, c.lift) } },
                     enabled = v.toDoubleOrNull() != null,
-                ) { Text("Save") }
+                    colors = ButtonDefaults.textButtonColors(contentColor = Forge.Ember),
+                ) { Text("SAVE", style = MaterialTheme.typography.labelMedium) }
             }
         }
     }
@@ -325,11 +328,7 @@ private fun ClaimsSection(p: Profile, onSave: (String, Double, String) -> Unit) 
 @Composable
 private fun SkillsSection(p: Profile, onToggle: (String, Boolean) -> Unit) {
     Section("Skills") {
-        Text(
-            "Binary unlocks, no load required. Twelve of them make up 20% of MASTERY.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Muted("Binary unlocks, no load required. Twelve of them make up 20% of MASTERY.")
         p.skills.forEach { s ->
             Row(
                 Modifier.fillMaxWidth(),
@@ -338,8 +337,17 @@ private fun SkillsSection(p: Profile, onToggle: (String, Boolean) -> Unit) {
                 Checkbox(
                     checked = s.unlocked,
                     onCheckedChange = { onToggle(s.skill, it) },
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = Forge.Blood,
+                        uncheckedColor = Forge.Steel,
+                        checkmarkColor = Forge.Parchment,
+                    ),
                 )
-                Text(s.skill, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    s.skill,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (s.unlocked) Forge.Parchment else Forge.Ash,
+                )
             }
         }
     }
@@ -349,11 +357,9 @@ private fun SkillsSection(p: Profile, onToggle: (String, Boolean) -> Unit) {
 
 @Composable
 private fun Section(title: String, content: @Composable () -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(title, style = MaterialTheme.typography.titleSmall)
-            content()
-        }
+    ForgePanel {
+        SectionLabel(title)
+        content()
     }
 }
 
@@ -362,9 +368,12 @@ private fun NumField(label: String, value: String, onChange: (String) -> Unit) {
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
-        label = { Text(label) },
+        label = { Text(label, style = MaterialTheme.typography.bodySmall) },
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
+        shape = RectangleShape,
+        textStyle = Ledger,
+        colors = forgeFieldColors(),
         keyboardOptions = KeyboardOptions(
             keyboardType = KeyboardType.Decimal,
             imeAction = ImeAction.Next,
@@ -380,14 +389,10 @@ private fun LabelledChips(
     onSelect: (String) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(label, style = MaterialTheme.typography.labelMedium)
+        Text(label.uppercase(), style = MaterialTheme.typography.labelMedium, color = Forge.Ash)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             options.forEach { o ->
-                FilterChip(
-                    selected = selected == o,
-                    onClick = { onSelect(o) },
-                    label = { Text(o) },
-                )
+                ForgeChip(o, selected == o) { onSelect(o) }
             }
         }
     }
@@ -398,4 +403,45 @@ private fun fmt(v: Double): String = when {
     v <= 0 -> ""
     v == v.toLong().toDouble() -> v.toLong().toString()
     else -> "%.1f".format(v)
+}
+
+// ---------- Forge control styling ----------
+
+@Composable
+private fun forgeFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedBorderColor = Forge.Ember,
+    unfocusedBorderColor = Forge.Hairline,
+    focusedContainerColor = Forge.PanelHi,
+    unfocusedContainerColor = Forge.PanelHi,
+    cursorColor = Forge.Ember,
+    focusedTextColor = Forge.Parchment,
+    unfocusedTextColor = Forge.Parchment,
+    focusedLabelColor = Forge.Ember,
+    unfocusedLabelColor = Forge.Slate,
+)
+
+@Composable
+private fun forgeButtonColors() = ButtonDefaults.buttonColors(
+    containerColor = Forge.Blood,
+    contentColor = Forge.Parchment,
+    disabledContainerColor = Forge.PanelHi,
+    disabledContentColor = Forge.Slate,
+)
+
+/** Square chip, hairlined when idle and blood-filled when chosen. */
+@Composable
+private fun ForgeChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label, style = MaterialTheme.typography.bodySmall) },
+        shape = RectangleShape,
+        border = BorderStroke(1.dp, if (selected) Forge.Ember else Forge.Hairline),
+        colors = FilterChipDefaults.filterChipColors(
+            containerColor = Forge.Panel,
+            labelColor = Forge.Ash,
+            selectedContainerColor = Forge.Blood,
+            selectedLabelColor = Forge.Parchment,
+        ),
+    )
 }

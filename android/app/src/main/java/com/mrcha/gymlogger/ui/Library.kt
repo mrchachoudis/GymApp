@@ -25,7 +25,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +34,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -77,9 +80,17 @@ fun LibraryScreen(
     var selected by remember { mutableStateOf<Exercise?>(null) }
 
     Scaffold(
+        containerColor = Forge.Ground,
         topBar = {
             TopAppBar(
-                title = { Text("Exercises") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Forge.Ground,
+                    titleContentColor = Forge.Bone,
+                    actionIconContentColor = Forge.Ash,
+                ),
+                title = {
+                    Text("EXERCISES", style = MaterialTheme.typography.titleSmall)
+                },
                 actions = {
                     IconButton(onClick = onClose) {
                         Icon(Icons.Default.Close, contentDescription = "Close")
@@ -93,27 +104,40 @@ fun LibraryScreen(
                 value = state.query,
                 onValueChange = onQueryChange,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                label = { Text("Search") },
-                placeholder = { Text("incline press") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                placeholder = {
+                    Text("incline press", color = Forge.Slate)
+                },
+                leadingIcon = {
+                    Icon(Icons.Default.Search, contentDescription = null, tint = Forge.Ash)
+                },
                 singleLine = true,
+                shape = RectangleShape,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Forge.Ember,
+                    unfocusedBorderColor = Forge.Hairline,
+                    focusedContainerColor = Forge.Panel,
+                    unfocusedContainerColor = Forge.Panel,
+                    cursorColor = Forge.Ember,
+                    focusedTextColor = Forge.Parchment,
+                    unfocusedTextColor = Forge.Parchment,
+                ),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             )
 
             FilterRow(state, onFilter)
 
             Text(
-                if (state.total == 0 && !state.loading) "nothing matches"
-                else "showing ${state.exercises.size} of ${state.total}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                if (state.total == 0 && !state.loading) "NOTHING MATCHES"
+                else "SHOWING ${state.exercises.size} OF ${state.total}",
+                style = MaterialTheme.typography.labelMedium,
+                color = Forge.Slate,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
 
             LazyColumn(Modifier.fillMaxSize()) {
                 items(state.exercises, key = { it.id }) { ex ->
                     ExerciseRow(ex, imageLoader, mediaUrl) { selected = ex }
-                    HorizontalDivider()
+                    HairlineRule()
                 }
                 // Paging on reaching the end, rather than a button: the list is
                 // long and the user is already scrolling.
@@ -132,6 +156,8 @@ fun LibraryScreen(
     selected?.let { ex ->
         ModalBottomSheet(
             onDismissRequest = { selected = null },
+            containerColor = Forge.Panel,
+            contentColor = Forge.Parchment,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         ) {
             ExerciseDetail(ex, imageLoader, mediaUrl)
@@ -156,8 +182,17 @@ private fun FilterRow(state: LibraryState, onFilter: (String, String) -> Unit) {
             FilterChip(
                 selected = active,
                 onClick = { onFilter(if (active) "" else f.value, state.target) },
-                label = { Text("${f.value} ${f.count}") },
-                colors = FilterChipDefaults.filterChipColors(),
+                label = {
+                    Text("${f.value} ${f.count}", style = MaterialTheme.typography.bodySmall)
+                },
+                shape = RectangleShape,
+                border = BorderStroke(1.dp, if (active) Forge.Ember else Forge.Hairline),
+                colors = FilterChipDefaults.filterChipColors(
+                    containerColor = Forge.Panel,
+                    labelColor = Forge.Ash,
+                    selectedContainerColor = Forge.Blood,
+                    selectedLabelColor = Forge.Parchment,
+                ),
             )
         }
     }
@@ -183,11 +218,11 @@ private fun ExerciseRow(
             modifier = Modifier.size(56.dp),
         )
         Column(Modifier.weight(1f)) {
-            Text(ex.name, style = MaterialTheme.typography.bodyLarge)
+            Text(ex.name, style = MaterialTheme.typography.bodyLarge, color = Forge.Parchment)
             Text(
                 "${ex.target} · ${ex.equipment}",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = Forge.Slate,
             )
         }
     }
@@ -207,19 +242,20 @@ private fun ExerciseDetail(
             .padding(bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(ex.name, style = MaterialTheme.typography.headlineSmall)
+        Text(
+            ex.name.uppercase(),
+            style = MaterialTheme.typography.titleLarge,
+            color = Forge.Ember,
+        )
         Text(
             "${ex.bodyPart} · ${ex.target} · ${ex.equipment}",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = Forge.Ash,
         )
         if (ex.secondary.isNotEmpty()) {
-            Text(
-                "also works: " + ex.secondary.joinToString(", "),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Muted("also works: " + ex.secondary.joinToString(", "))
         }
+        SectionLabel("Execution")
 
         Demo(
             url = mediaUrl("gif", ex.animation),
@@ -229,13 +265,8 @@ private fun ExerciseDetail(
 
         ex.steps.forEachIndexed { i, step ->
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    "${i + 1}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Text(step, style = MaterialTheme.typography.bodyMedium)
+                Text("${i + 1}", style = Ledger, color = Forge.Ember)
+                Text(step, style = MaterialTheme.typography.bodyMedium, color = Forge.Parchment)
             }
         }
     }

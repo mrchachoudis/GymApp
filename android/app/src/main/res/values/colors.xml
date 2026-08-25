@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#111318</color>
+    <!-- Forge.Ground. Kept in sync with ui/Forge.kt by hand: it is the one
+         colour that has to exist in both worlds, because the window is painted
+         by the platform before Compose draws its first frame. -->
+    <color name="forge_ground">#08080A</color>
+    <color name="ic_launcher_background">#08080A</color>
 </resources>

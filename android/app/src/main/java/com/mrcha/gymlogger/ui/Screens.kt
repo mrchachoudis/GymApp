@@ -11,6 +11,11 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,10 +58,22 @@ fun GymApp(
     }
 
     Scaffold(
+        containerColor = Forge.Ground,
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text("Gym Logger") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Forge.Ground,
+                    titleContentColor = Forge.Bone,
+                    actionIconContentColor = Forge.Ash,
+                ),
+                title = {
+                    Text(
+                        "GYM LOGGER",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Forge.Bone,
+                    )
+                },
                 actions = {
                     IconButton(onClick = { vm.openProfile() }) {
                         Icon(Icons.Default.Person, contentDescription = "Profile")
@@ -136,168 +153,168 @@ fun GymApp(
 
 @Composable
 private fun RankCard(rank: Rank) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(rank.rank, style = MaterialTheme.typography.headlineSmall)
-                Text("RS %.1f".format(rank.rs), style = MaterialTheme.typography.titleMedium)
-            }
-
-            // Erratum 1, and this is the whole point of the switch: below the
-            // Berserk boundary a composite is the honest readout, and at the
-            // boundary it is misleading, because a lifter can sit above the old
-            // RS 80 threshold and still be one point of MASTERY short. So the
-            // top two ranks get the binding gate instead of a progress bar.
-            if (rank.showGates) {
-                GateReadout(rank)
-            } else {
-                BandProgress(rank)
-            }
-
-            AttributeRow(rank.attributes)
-            PatternList(rank.patterns)
-
-            if (rank.weakLink.isNotBlank()) {
-                Text(
-                    rank.weakLink,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-
-            if (rank.blood.total > 0) {
-                Text(
-                    "%s  ·  %.0f Blood (+%.0f last 30d)  ·  %.0f to %s".format(
-                        rank.blood.tierName, rank.blood.total,
-                        rank.blood.last30d, rank.blood.toNext, rank.blood.nextTier,
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-
+    // The rank name is the loudest thing on screen and the only place the ember
+    // accent runs at full strength, because it is the one number the whole app
+    // exists to move.
+    ForgePanel(accent = if (rank.berserk.qualified) Forge.Blood else Forge.Hairline) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Bottom,
+        ) {
             Text(
-                "threat %.0f  ·  confidence %.0f%%  ·  journey %d sessions".format(
-                    rank.threatLevel, rank.confidence * 100, rank.journey.sessions,
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                rank.rank,
+                style = MaterialTheme.typography.headlineSmall,
+                color = Forge.Ember,
             )
-
-            rank.notes.forEach {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Text(
+                "RS %.1f".format(rank.rs),
+                style = MaterialTheme.typography.titleMedium,
+                color = Forge.Bone,
+            )
         }
+
+        // Erratum 1: composite below the boundary, gates at it.
+        if (rank.showGates) GateReadout(rank) else BandProgress(rank)
+
+        SectionLabel("Attributes")
+        AttributeRow(rank.attributes)
+
+        SectionLabel("Patterns")
+        PatternList(rank.patterns)
+
+        if (rank.weakLink.isNotBlank()) {
+            Text(
+                rank.weakLink,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Forge.Ember,
+            )
+        }
+
+        if (rank.blood.total > 0) {
+            SectionLabel("Blood", accent = Forge.BloodBright)
+            LedgerRow(
+                rank.blood.tierName,
+                "%.0f".format(rank.blood.total),
+                valueColor = Forge.BloodBright,
+            )
+            ForgeMeter(rank.blood.progress.toFloat(), color = Forge.BloodBright)
+            Muted(
+                "+%.0f last 30 days - %.0f to %s".format(
+                    rank.blood.last30d, rank.blood.toNext, rank.blood.nextTier,
+                ),
+            )
+        }
+
+        LedgerRow(
+            "threat %.0f".format(rank.threatLevel),
+            "confidence %.0f%%".format(rank.confidence * 100),
+            labelColor = if (rank.threatLevel < 100) Forge.Ember else Forge.Slate,
+            valueColor = Forge.Slate,
+        )
+
+        rank.notes.forEach { Muted(it) }
     }
 }
 
 @Composable
 private fun BandProgress(rank: Rank) {
     if (rank.nextRank.isBlank()) return
-    LinearProgressIndicator(
-        progress = { rank.bandProgress.toFloat().coerceIn(0f, 1f) },
-        modifier = Modifier.fillMaxWidth(),
-    )
-    Text(
-        "RS %.0f / %.0f → %s".format(rank.rs, rank.rs + rank.toNext, rank.nextRank),
-        style = MaterialTheme.typography.bodySmall,
-    )
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        ForgeMeter(rank.bandProgress.toFloat())
+        LedgerRow(
+            "RS %.0f / %.0f".format(rank.rs, rank.rs + rank.toNext),
+            rank.nextRank,
+            valueColor = Forge.Bone,
+        )
+    }
 }
 
 // GateReadout is the table Erratum 1 specifies: every gate, its value against
-// its threshold, and the computed fix for whichever one is binding. No
-// composite number appears here at all.
+// its threshold, and a computed fix for whichever binds. No composite appears.
+//
+// A passing gate is bone, a failing one is blood. That is the entire colour
+// system on this readout, which is why blood appears nowhere else in it.
 @Composable
 private fun GateReadout(rank: Rank) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        SectionLabel("Berserk gates", accent = Forge.BloodBright)
+
         rank.berserk.gates.forEach { gate ->
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+            LedgerRow(
+                gate.name.padEnd(11),
+                "%5.1f / %-3.0f".format(gate.value, gate.threshold),
+                labelColor = if (gate.pass) Forge.Bone else Forge.BloodBright,
+                valueColor = if (gate.pass) Forge.Parchment else Forge.BloodBright,
             ) {
                 Text(
-                    "%-11s %5.1f / %.0f".format(gate.name, gate.value, gate.threshold),
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                )
-                Text(
-                    if (gate.pass) "✓" else "✗",
-                    color = if (gate.pass) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
+                    if (gate.pass) "PASS" else "FAIL",
+                    style = Ledger,
+                    color = if (gate.pass) Forge.Ember else Forge.BloodBright,
                 )
             }
         }
 
-        Text(
-            "%-11s %d / 6 verified".format("PATTERNS", rank.berserk.patternsVerified),
-            style = MaterialTheme.typography.bodySmall,
-            fontFamily = FontFamily.Monospace,
+        LedgerRow(
+            "PATTERNS".padEnd(11),
+            "%d / 6 verified".format(rank.berserk.patternsVerified),
+            labelColor = if (rank.berserk.patternsVerified == 6) Forge.Bone else Forge.BloodBright,
         )
 
-        Spacer(Modifier.height(4.dp))
-        Text(rank.berserk.summary, style = MaterialTheme.typography.bodyMedium)
+        Gap(4)
+        Text(
+            rank.berserk.summary,
+            style = MaterialTheme.typography.bodyMedium,
+            color = Forge.Parchment,
+        )
 
-        // The first failing gate carries a computed instruction rather than
-        // encouragement: what number has to move, and to what.
         rank.berserk.gates.firstOrNull { !it.pass && it.fix.isNotBlank() }?.let {
-            Text(
-                it.fix,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary,
-            )
+            Text(it.fix, style = MaterialTheme.typography.bodySmall, color = Forge.Ember)
         }
 
-        // Erratum 6: a user looking at a passing pattern floor and a failing
-        // MIGHT gate will otherwise assume a bug, so the reason is stated.
-        if (rank.berserk.note.isNotBlank()) {
-            Text(
-                rank.berserk.note,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        // Erratum 6: without this, a passing floor beside a failing MIGHT reads
+        // as a bug.
+        if (rank.berserk.note.isNotBlank()) Muted(rank.berserk.note)
     }
 }
 
 @Composable
 private fun AttributeRow(a: Attributes) {
-    Text(
-        "MIGHT %.0f  DOM %.0f  FRAME %.0f  VIGOR %.0f  DISC %.0f  MAST %.0f".format(
-            a.might, a.dominion, a.frame, a.vigor, a.discipline, a.mastery,
-        ),
-        style = MaterialTheme.typography.bodySmall,
-        fontFamily = FontFamily.Monospace,
+    val rows = listOf(
+        "MIGHT" to a.might, "DOMINION" to a.dominion, "FRAME" to a.frame,
+        "VIGOR" to a.vigor, "DISCIPLINE" to a.discipline, "MASTERY" to a.mastery,
     )
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        rows.forEach { (name, v) ->
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                LedgerRow(name, "%.0f".format(v))
+                // 100 is Berserk level in an attribute, so the meter is scaled
+                // to that rather than to the 120 ceiling: a full bar should read
+                // as "at the standard", not "near the cap".
+                ForgeMeter((v / 100.0).toFloat(), color = Forge.MuscleHot)
+            }
+        }
+    }
 }
 
 @Composable
 private fun PatternList(patterns: List<PatternScore>) {
-    Column {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
         patterns.forEach { p ->
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+            // An imputed score stands in for data the app has never seen, so it
+            // is drawn drained - the same visual grammar the muscle map uses for
+            // a group that got no work.
+            val imputed = p.imputed
+            LedgerRow(
+                p.name,
+                "%5.1f".format(p.score),
+                labelColor = if (imputed) Forge.Slate else Forge.Bone,
+                valueColor = if (imputed) Forge.Slate else Forge.Parchment,
             ) {
                 Text(
-                    "%-18s %5.1f".format(p.name, p.score),
+                    if (imputed) "untested" else p.status.lowercase(),
                     style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                )
-                // An imputed score is an estimate standing in for data the app
-                // has never seen, and saying so is what makes the nudge work.
-                Text(
-                    if (p.imputed) "untested" else p.status.lowercase(),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (p.imputed) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (imputed) Forge.Ember else Forge.Slate,
                 )
             }
         }
@@ -305,13 +322,13 @@ private fun PatternList(patterns: List<PatternScore>) {
 }
 
 // MuscleCard adapts the server's per-group report onto the muscle map. The map
-// itself takes only what it draws -- name, set count, total, and the neglected
-// line -- so the wire type is flattened here rather than pushed into it.
+// takes only what it draws, so the wire type is flattened here rather than
+// pushed into it.
 @Composable
 private fun MuscleCard(report: MuscleReport) {
     // Zero-volume groups are dropped from the bars: the figures already show a
-    // drained muscle as unworked, and a row reading "CALVES 0" under it is the
-    // same fact twice. The neglected line is where absence gets named.
+    // drained muscle as unworked, and a row reading "CALVES 0" underneath says
+    // the same thing twice. The neglected line is where absence gets named.
     val volumes = report.volumes
         .filter { it.sets > 0 }
         .sortedByDescending { it.sets }
@@ -322,28 +339,23 @@ private fun MuscleCard(report: MuscleReport) {
     val neglected = report.volumes
         .firstOrNull { it.name == report.neglected }
         ?.let { v ->
-            if (v.lastTrained.isBlank()) "${report.neglected} · NEVER LOGGED"
-            else "${report.neglected} · 0 SETS IN ${v.daysSince} D"
+            if (v.lastTrained.isBlank()) report.neglected + " - NEVER LOGGED"
+            else report.neglected + " - 0 SETS IN " + v.daysSince + " D"
         }
-        ?: report.neglected.takeIf { it.isNotBlank() }?.let { "$it · NEVER LOGGED" }
+        ?: report.neglected.takeIf { it.isNotBlank() }?.let { it + " - NEVER LOGGED" }
 
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            MuscleMap(
-                volumes = volumes,
-                totalSets = report.totalSets,
-                neglected = neglected,
-            )
-            // Unmapped exercises are surfaced, not swallowed. Volume credited to
-            // nothing is invisible in the figures above, and the only way a
-            // mapping gap gets noticed is if the app admits to it.
-            if (report.unmatched.isNotEmpty()) {
-                Text(
-                    "not mapped to a muscle group: " + report.unmatched.joinToString(", "),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+    ForgePanel {
+        SectionLabel("Muscle map")
+        MuscleMap(
+            volumes = volumes,
+            totalSets = report.totalSets,
+            neglected = neglected,
+        )
+        // Unmapped exercises are surfaced, not swallowed. Volume credited to
+        // nothing is invisible in the figures above, and the only way a mapping
+        // gap gets noticed is if the app admits to it.
+        if (report.unmatched.isNotEmpty()) {
+            Muted("not mapped to a muscle group: " + report.unmatched.joinToString(", "))
         }
     }
 }
@@ -355,12 +367,14 @@ private fun NextSessionCard(rec: Recommendation) {
         "rest" -> "Rest day"
         else -> "Nothing scheduled"
     }
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Up next", style = MaterialTheme.typography.labelMedium)
-            Text(title, style = MaterialTheme.typography.titleLarge)
-            Text(rec.reason, style = MaterialTheme.typography.bodySmall)
-        }
+    ForgePanel {
+        SectionLabel("Up next")
+        Text(
+            title.uppercase(),
+            style = MaterialTheme.typography.titleLarge,
+            color = if (rec.kind == "rest") Forge.Ash else Forge.Parchment,
+        )
+        Muted(rec.reason)
     }
 }
 
@@ -372,38 +386,71 @@ private fun LogInput(
     onMic: () -> Unit,
     onSubmit: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SectionLabel("The work")
         OutlinedTextField(
             value = value,
             onValueChange = onChange,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 120.dp),
-            label = { Text("What did you do") },
-            placeholder = { Text("bench 100 x 5, 5, 4; dips bw x 12, 10") },
+                .heightIn(min = 110.dp),
+            placeholder = {
+                Text(
+                    "bench 100 x 5, 5, 4; dips bw x 12, 10",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Forge.Slate,
+                )
+            },
             enabled = !busy,
+            shape = RectangleShape,
+            textStyle = MaterialTheme.typography.bodyLarge,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Forge.Ember,
+                unfocusedBorderColor = Forge.Hairline,
+                focusedContainerColor = Forge.Panel,
+                unfocusedContainerColor = Forge.Panel,
+                cursorColor = Forge.Ember,
+                focusedTextColor = Forge.Parchment,
+                unfocusedTextColor = Forge.Parchment,
+            ),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onMic, enabled = !busy) {
+            OutlinedButton(
+                onClick = onMic,
+                enabled = !busy,
+                shape = RectangleShape,
+                border = BorderStroke(1.dp, Forge.Steel),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Forge.Bone),
+            ) {
                 Icon(Icons.Default.Mic, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text("Speak")
+                Text("SPEAK", style = MaterialTheme.typography.labelMedium)
             }
+            // The one blood-filled control in the app: logging is the act
+            // everything else is downstream of.
             Button(
                 onClick = onSubmit,
                 enabled = !busy && value.isNotBlank(),
                 modifier = Modifier.weight(1f),
+                shape = RectangleShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Forge.Blood,
+                    contentColor = Forge.Parchment,
+                    disabledContainerColor = Forge.PanelHi,
+                    disabledContentColor = Forge.Slate,
+                ),
             ) {
                 if (busy) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(18.dp),
                         strokeWidth = 2.dp,
+                        color = Forge.Ember,
                     )
                 } else {
                     Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text("Log it")
+                    Text("LOG IT", style = MaterialTheme.typography.labelMedium)
                 }
             }
         }
@@ -416,84 +463,88 @@ private fun ResultSection(result: LogResult, onConfirm: (Long) -> Unit) {
 
         // A parse that needs confirmation is the most important thing on
         // screen: nothing was written, and silently moving on would leave the
-        // session unlogged.
+        // session unlogged. It is the one panel that gets a blood border.
         if (result.needsConfirmation.isNotBlank()) {
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                ),
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Needs a check", style = MaterialTheme.typography.titleMedium)
-                    Text(result.needsConfirmation, style = MaterialTheme.typography.bodyMedium)
-                    if (result.pendingId != 0L) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { onConfirm(result.pendingId) }) {
-                                Text("Log it anyway")
-                            }
-                            Text(
-                                "or edit the text above and send again",
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.align(Alignment.CenterVertically),
-                            )
+            ForgePanel(accent = Forge.Blood) {
+                SectionLabel("Needs a check", accent = Forge.BloodBright)
+                Text(
+                    result.needsConfirmation,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Forge.Parchment,
+                )
+                if (result.pendingId != 0L) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Button(
+                            onClick = { onConfirm(result.pendingId) },
+                            shape = RectangleShape,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Forge.Blood,
+                                contentColor = Forge.Parchment,
+                            ),
+                        ) {
+                            Text("LOG IT ANYWAY", style = MaterialTheme.typography.labelMedium)
                         }
+                        Muted("or edit the text above and send again")
                     }
                 }
             }
         }
 
+        // The coach reply is prose, not data: parchment on panel, no ledger
+        // face, no label above it. It should read like something written.
         if (result.reply.isNotBlank()) {
-            Card(Modifier.fillMaxWidth()) {
+            ForgePanel {
                 Text(
                     result.reply,
-                    modifier = Modifier.padding(16.dp),
                     style = MaterialTheme.typography.bodyLarge,
+                    color = Forge.Parchment,
                 )
             }
         }
 
         result.repairs.takeIf { it.isNotEmpty() }?.let { repairs ->
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Adjusted while saving", style = MaterialTheme.typography.labelMedium)
-                    repairs.forEach {
-                        Text(it, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
+            ForgePanel {
+                SectionLabel("Adjusted while saving", accent = Forge.Ash)
+                repairs.forEach { Muted(it) }
             }
         }
 
         result.context?.liftHistory?.takeIf { it.isNotEmpty() }?.let { lifts ->
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("This session", style = MaterialTheme.typography.labelMedium)
-                    lifts.forEach { lift ->
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(lift.display, style = MaterialTheme.typography.bodyMedium)
-                                Text(
-                                    lift.topSetToday,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontFamily = FontFamily.Monospace,
-                                )
-                            }
-                            val badge = when {
-                                lift.isWeightPR -> "weight PR"
-                                lift.isRepPR -> "rep PR"
-                                lift.isBaseline -> "baseline"
-                                else -> ""
-                            }
-                            if (badge.isNotEmpty()) {
-                                Text(
-                                    badge,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.align(Alignment.CenterVertically),
-                                )
-                            }
+            ForgePanel {
+                SectionLabel("This session")
+                lifts.forEach { lift ->
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                lift.display,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Forge.Parchment,
+                            )
+                            Text(lift.topSetToday, style = Ledger, color = Forge.Ash)
+                        }
+                        // A PR is the only thing in this list worth colour, and
+                        // it gets the brightest one in the palette. A baseline
+                        // is just a fact and stays ash.
+                        val badge = when {
+                            lift.isWeightPR -> "WEIGHT PR"
+                            lift.isRepPR -> "REP PR"
+                            lift.isBaseline -> "baseline"
+                            else -> ""
+                        }
+                        if (badge.isNotEmpty()) {
+                            val isPR = lift.isWeightPR || lift.isRepPR
+                            Text(
+                                badge,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (isPR) Forge.BloodBright else Forge.Slate,
+                            )
                         }
                     }
                 }
@@ -509,7 +560,11 @@ private fun SettingsDialog(prefs: Prefs, onDismiss: () -> Unit, onSaved: () -> U
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Server") },
+        shape = RectangleShape,
+        containerColor = Forge.Panel,
+        titleContentColor = Forge.Bone,
+        textContentColor = Forge.Parchment,
+        title = { Text("SERVER", style = MaterialTheme.typography.titleSmall) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(

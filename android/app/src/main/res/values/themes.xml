@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Compose supplies the real theme; this only needs to exist so the
-         activity has something to start with before the first frame. -->
-    <style name="Theme.GymLogger" parent="android:Theme.Material.NoActionBar" />
+    <!-- Compose supplies the real theme. This exists so the activity has
+         something to start with before the first frame — and it has to be the
+         Forge ground, or the app opens on Material's grey and jumps to
+         obsidian a frame later. -->
+    <style name="Theme.GymLogger" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/forge_ground</item>
+        <item name="android:statusBarColor">@color/forge_ground</item>
+        <item name="android:navigationBarColor">@color/forge_ground</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
 </resources>
