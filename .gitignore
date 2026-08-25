@@ -1,4 +1,4 @@
-gymd
+/gymd
 *.db
 *.db-wal
 *.db-shm
@@ -10,6 +10,6 @@ android/local.properties
 *.jks
 android/keystore.properties
 .auth_token
-gymd.exe
+/gymd.exe
 *.apk
 android/gradle/wrapper/dists/

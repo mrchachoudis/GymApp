@@ -47,8 +47,11 @@ func TestEndToEndLogWithStub(t *testing.T) {
 	if res.Reply == "" {
 		t.Fatal("expected a coach reply")
 	}
-	if res.Rank == nil || res.Rank.Tier == "" {
+	if res.Rank == nil || res.Rank.Rank == "" {
 		t.Fatal("expected a rank")
+	}
+	if len(res.Rank.Patterns) != 6 {
+		t.Fatalf("expected six pattern scores, got %d", len(res.Rank.Patterns))
 	}
 }
 

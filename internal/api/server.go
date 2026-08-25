@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/mrcha/gymlogger/internal/app"
+	"github.com/mrcha/gymlogger/internal/berserk"
 	"github.com/mrcha/gymlogger/internal/model"
 	"github.com/mrcha/gymlogger/internal/push"
 	"github.com/mrcha/gymlogger/internal/scheduler"
@@ -52,6 +53,14 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /v1/settings", s.auth(http.HandlerFunc(s.handleGetSettings)))
 	mux.Handle("POST /v1/settings", s.auth(http.HandlerFunc(s.handleSetSetting)))
 	mux.Handle("POST /v1/test-push", s.auth(http.HandlerFunc(s.handleTestPush)))
+
+	// Berserk rank system inputs. The engine reads body composition, onboarding
+	// self-reports and skill unlocks, and none of them can be derived from set
+	// rows, so each needs a way in.
+	mux.Handle("POST /v1/body", s.auth(http.HandlerFunc(s.handleBody)))
+	mux.Handle("POST /v1/claims", s.auth(http.HandlerFunc(s.handleClaims)))
+	mux.Handle("POST /v1/skills", s.auth(http.HandlerFunc(s.handleSkills)))
+	mux.Handle("GET /v1/blood", s.auth(http.HandlerFunc(s.handleBlood)))
 
 	return logging(s.Logger, mux)
 }
@@ -156,6 +165,140 @@ func (s *Server) handleRank(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, rk)
+}
+
+type bodyRequest struct {
+	Date         string   `json:"date,omitempty"` // YYYY-MM-DD, defaults to today
+	BodyweightKg float64  `json:"bodyweight_kg"`
+	BodyfatPct   *float64 `json:"bodyfat_pct,omitempty"`
+	Source       string   `json:"bf_source,omitempty"` // dexa|caliper|navy|estimate
+}
+
+func (s *Server) handleBody(w http.ResponseWriter, r *http.Request) {
+	var req bodyRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	// Bounds, not preferences: a value outside these is a typo or a unit
+	// mix-up, and it would move every strength reference in the system.
+	if req.BodyweightKg < 30 || req.BodyweightKg > 300 {
+		writeErr(w, http.StatusBadRequest, errors.New("bodyweight_kg must be between 30 and 300"))
+		return
+	}
+	if req.BodyfatPct != nil && (*req.BodyfatPct < 3 || *req.BodyfatPct > 60) {
+		writeErr(w, http.StatusBadRequest, errors.New("bodyfat_pct must be between 3 and 60"))
+		return
+	}
+	date := req.Date
+	if date == "" {
+		date = s.Store.LocalDate(time.Now())
+	} else if _, err := time.Parse("2006-01-02", date); err != nil {
+		writeErr(w, http.StatusBadRequest, errors.New("date must be YYYY-MM-DD"))
+		return
+	}
+	if err := s.Store.RecordBodyMetrics(r.Context(), date, req.BodyweightKg, req.BodyfatPct, req.Source); err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "recorded", "date": date})
+}
+
+type claimsRequest struct {
+	Claims []struct {
+		Pattern string  `json:"pattern"`
+		E1RMKg  float64 `json:"e1rm_kg"`
+		Lift    string  `json:"lift,omitempty"`
+	} `json:"claims"`
+}
+
+func (s *Server) handleClaims(w http.ResponseWriter, r *http.Request) {
+	var req claimsRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	valid := map[string]bool{}
+	for _, p := range berserk.Patterns {
+		valid[string(p)] = true
+	}
+	for _, c := range req.Claims {
+		if !valid[c.Pattern] {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("unknown pattern %q", c.Pattern))
+			return
+		}
+		if c.E1RMKg <= 0 || c.E1RMKg > 500 {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("implausible e1rm for %s", c.Pattern))
+			return
+		}
+		if err := s.Store.SetPatternClaim(r.Context(), c.Pattern, c.E1RMKg, c.Lift); err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "saved", "count": len(req.Claims)})
+}
+
+type skillsRequest struct {
+	Skills map[string]bool `json:"skills"`
+}
+
+func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
+	var req skillsRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	known := map[string]bool{}
+	for _, s := range berserk.Skills {
+		known[s] = true
+	}
+	for name, unlocked := range req.Skills {
+		if !known[name] {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("unknown skill %q", name))
+			return
+		}
+		if err := s.Store.SetSkill(r.Context(), name, unlocked); err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "saved", "known": berserk.Skills})
+}
+
+// handleBlood returns the ledger tail, so the user can see what earned what
+// rather than only a running total.
+func (s *Server) handleBlood(w http.ResponseWriter, r *http.Request) {
+	total, err := s.App.Rank.Ledger.Total(r.Context(), time.Now())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	rows, err := s.Store.DB().QueryContext(r.Context(), `
+		SELECT source, amount, awarded_on, detail FROM blood_ledger
+		ORDER BY awarded_on DESC, rowid DESC LIMIT 50`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer rows.Close()
+
+	type entry struct {
+		Source string  `json:"source"`
+		Amount float64 `json:"amount"`
+		On     string  `json:"awarded_on"`
+		Detail string  `json:"detail"`
+	}
+	out := []entry{}
+	for rows.Next() {
+		var e entry
+		if err := rows.Scan(&e.Source, &e.Amount, &e.On, &e.Detail); err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		out = append(out, e)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"blood": total, "recent": out})
 }
 
 func (s *Server) handleNext(w http.ResponseWriter, r *http.Request) {

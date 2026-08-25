@@ -13,11 +13,11 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/mrcha/gymlogger/internal/berserk"
 	"github.com/mrcha/gymlogger/internal/contextbuilder"
 	"github.com/mrcha/gymlogger/internal/llm"
 	"github.com/mrcha/gymlogger/internal/model"
 	"github.com/mrcha/gymlogger/internal/prompt"
-	"github.com/mrcha/gymlogger/internal/rank"
 	"github.com/mrcha/gymlogger/internal/store"
 	"github.com/mrcha/gymlogger/internal/validate"
 )
@@ -26,7 +26,7 @@ type App struct {
 	Store  *store.Store
 	LLM    llm.Client
 	Ctx    *contextbuilder.Builder
-	Rank   *rank.Calculator
+	Rank   *berserk.Calculator
 	Logger *slog.Logger
 
 	ParserModel string
@@ -38,7 +38,7 @@ func New(st *store.Store, client llm.Client, logger *slog.Logger) *App {
 		Store:       st,
 		LLM:         client,
 		Ctx:         contextbuilder.New(st),
-		Rank:        rank.NewCalculator(st),
+		Rank:        berserk.NewCalculator(st),
 		Logger:      logger,
 		ParserModel: llm.ModelParser,
 		CoachModel:  llm.ModelCoach,
@@ -52,7 +52,7 @@ type LogResult struct {
 	Needs     string                  `json:"needs_confirmation,omitempty"`
 	Parsed    *model.ParsedSession    `json:"parsed"`
 	Context   *contextbuilder.Context `json:"context,omitempty"`
-	Rank      *rank.Rank              `json:"rank,omitempty"`
+	Rank      *berserk.Rank           `json:"rank,omitempty"`
 	Reply     string                  `json:"reply,omitempty"`
 	Repairs   []string                `json:"repairs,omitempty"`
 }
@@ -119,6 +119,14 @@ func (a *App) Commit(ctx context.Context, parsed *model.ParsedSession, res *LogR
 	if when.IsZero() {
 		when = time.Now()
 	}
+	// Blood for this session's records is settled before the rank is computed,
+	// so the total the phone renders already includes what just happened. The
+	// ledger is idempotent on its dedup keys, so a retried log does not pay
+	// twice.
+	if err := a.awardSessionBlood(ctx, sessionID, when, cb); err != nil {
+		a.Logger.Warn("blood award failed", "err", err)
+	}
+
 	r, err := a.Rank.Compute(ctx, when)
 	if err != nil {
 		a.Logger.Warn("rank compute failed", "err", err)
@@ -256,4 +264,57 @@ func (a *App) ConfirmPending(ctx context.Context, pendingID int64, corrected *mo
 		a.Logger.Warn("resolve pending failed", "err", err)
 	}
 	return res, nil
+}
+
+// awardSessionBlood prices the records the context builder already found.
+//
+// The split of responsibility matters: contextbuilder decides what a PR IS --
+// the exact-weight rule, the 10% band, the session-timeline cut -- and this
+// only decides what a PR is WORTH. Duplicating the PR rules here would give
+// the app two definitions of a record that could disagree.
+func (a *App) awardSessionBlood(ctx context.Context, sessionID int64, when time.Time,
+	cb *contextbuilder.Context) error {
+
+	prof, err := berserk.LoadProfile(ctx, a.Store, when)
+	if err != nil {
+		return err
+	}
+
+	// A lift is stale when it has gone 180 days without moving. Erratum 5
+	// prices breaking that at 50 Blood, which is the largest single non-tier
+	// award in the system, because a plateau broken after six months is the
+	// most motivating event in a long training life.
+	stale := map[string]bool{}
+	for _, s := range cb.StaleLifts {
+		if s.Days >= 180 {
+			stale[s.Name] = true
+		}
+	}
+
+	var awards []berserk.PRAward
+	for _, lift := range cb.LiftHistory {
+		if !berserk.IsScored(lift.Name) {
+			continue
+		}
+		switch {
+		case lift.IsWeightPR:
+			var delta float64
+			if lift.Est1RMToday != nil && lift.Est1RMPrevious != nil {
+				delta = berserk.ScoreDelta(prof, lift.Name, *lift.Est1RMToday, *lift.Est1RMPrevious)
+			}
+			awards = append(awards, berserk.PRAward{
+				SessionID: sessionID, Lift: lift.Name, Kind: "strength",
+				DeltaS: delta, Stagnant: stale[lift.Name],
+			})
+		case lift.IsRepPR:
+			awards = append(awards, berserk.PRAward{
+				SessionID: sessionID, Lift: lift.Name, Kind: "rep",
+			})
+		}
+	}
+	if len(awards) == 0 {
+		return nil
+	}
+	_, err = a.Rank.Ledger.AwardPRs(ctx, when, awards)
+	return err
 }

@@ -111,6 +111,8 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NOT NULL
 );
 
+-- Superseded by berserk_snapshots. Retained rather than dropped so the old
+-- Iron-to-Mythic history stays readable after the v1.3 changeover.
 CREATE TABLE IF NOT EXISTS rank_snapshots (
     local_date       TEXT PRIMARY KEY,
     score            REAL    NOT NULL,
@@ -131,3 +133,76 @@ CREATE TABLE IF NOT EXISTS notifications_sent (
     sent_at    TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_notifications_sent_at ON notifications_sent(sent_at DESC);
+
+-- ===================================================================
+-- BERSERK RANK SYSTEM v1.3
+-- ===================================================================
+
+-- Body composition history. The rank engine needs a *series*, not a single
+-- reading: v1.0 §2.1 smooths LBM over eight weeks because raw scale numbers
+-- swing 2 kg on water alone, and §9 freezes reference recalculation when
+-- reported BF% jumps more than 4 points in 30 days. Neither is expressible
+-- against a single settings row.
+CREATE TABLE IF NOT EXISTS body_metrics (
+    local_date    TEXT PRIMARY KEY,
+    bodyweight_kg REAL NOT NULL,
+    bodyfat_pct   REAL,               -- 0..100, NULL when unmeasured
+    bf_source     TEXT NOT NULL DEFAULT 'estimate', -- dexa|caliper|navy|estimate
+    created_at    TEXT NOT NULL
+);
+
+-- Onboarding self-reports (v1.2 Patch 5). These score at 0.93 confidence and
+-- are PROVISIONAL: they carry a user as far as DREADBORN and no further, which
+-- is what stops a text field from minting a day-one BERSERK.
+CREATE TABLE IF NOT EXISTS pattern_claims (
+    pattern     TEXT PRIMARY KEY,     -- h_press|v_press|squat|hinge|v_pull|h_pull
+    e1rm_kg     REAL NOT NULL,
+    lift        TEXT NOT NULL DEFAULT '',
+    claimed_at  TEXT NOT NULL
+);
+
+-- The twelve skill unlocks of v1.0 §6.5. Binary and load-free, so they cannot
+-- be inferred from set rows; the user asserts them and MASTERY reads them.
+CREATE TABLE IF NOT EXISTS skill_unlocks (
+    skill       TEXT PRIMARY KEY,
+    unlocked_at TEXT NOT NULL
+);
+
+-- Nightly rank snapshots. Hysteresis (v1.2 Patch 3: promote on ten consecutive
+-- qualifying days, demote three points below the band floor) is a statement
+-- about history, so the history has to exist.
+CREATE TABLE IF NOT EXISTS berserk_snapshots (
+    local_date     TEXT PRIMARY KEY,
+    rs             REAL    NOT NULL,
+    rank_index     INTEGER NOT NULL,  -- 1..14
+    rank_name      TEXT    NOT NULL,
+    eligible_index INTEGER NOT NULL,  -- what RS alone would grant, pre-hysteresis
+    might          REAL    NOT NULL,
+    dominion       REAL    NOT NULL,
+    frame          REAL    NOT NULL,
+    vigor          REAL    NOT NULL,
+    discipline     REAL    NOT NULL,
+    mastery        REAL    NOT NULL,
+    berserk        INTEGER NOT NULL DEFAULT 0,
+    threat_level   REAL    NOT NULL DEFAULT 100,
+    confidence     REAL    NOT NULL DEFAULT 0,
+    blood_total    REAL    NOT NULL DEFAULT 0,
+    detail_json    TEXT    NOT NULL,
+    system_version TEXT    NOT NULL,
+    created_at     TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_berserk_snapshots_date ON berserk_snapshots(local_date DESC);
+
+-- Blood ledger (v1.2 Patch 7 as corrected by v1.3 Erratum 5). Append-only, and
+-- dedup_key is the whole design: weekly Blood is awarded per rolling Monday
+-- boundary, so the key is the boundary date and a nightly recompute cannot pay
+-- the same week twice.
+CREATE TABLE IF NOT EXISTS blood_ledger (
+    dedup_key   TEXT PRIMARY KEY,
+    source      TEXT NOT NULL,        -- week|gates_month|strength_pr|rep_pr|...
+    amount      REAL NOT NULL,
+    awarded_on  TEXT NOT NULL,        -- local_date the award is attributed to
+    detail      TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_blood_ledger_date ON blood_ledger(awarded_on DESC);

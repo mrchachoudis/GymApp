@@ -11,6 +11,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -281,4 +282,58 @@ func boolInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// ---------- berserk inputs ----------
+
+// RecordBodyMetrics appends a body-composition reading.
+//
+// It is an append to a series rather than an update to a settings row because
+// the rank engine smooths lean body mass over eight weeks and freezes
+// reference loads when body fat jumps; neither is expressible against a single
+// current value.
+func (s *Store) RecordBodyMetrics(ctx context.Context, localDate string, bwKg float64, bfPct *float64, source string) error {
+	if source == "" {
+		source = "estimate"
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO body_metrics(local_date, bodyweight_kg, bodyfat_pct, bf_source, created_at)
+		VALUES (?,?,?,?,?)
+		ON CONFLICT(local_date) DO UPDATE SET
+		  bodyweight_kg = excluded.bodyweight_kg,
+		  bodyfat_pct   = excluded.bodyfat_pct,
+		  bf_source     = excluded.bf_source`,
+		localDate, bwKg, bfPct, source, time.Now().UTC().Format(time.RFC3339))
+	if err != nil {
+		return err
+	}
+	// Keep the settings mirror current so anything still reading the single
+	// value (volume scaling, the scheduler) sees the same number the rank does.
+	return s.SetSetting(ctx, "bodyweight_kg", strconv.FormatFloat(bwKg, 'f', 2, 64))
+}
+
+// SetPatternClaim records an onboarding self-report. These are PROVISIONAL:
+// they score at a discount and cannot carry a user past DREADBORN, which is
+// what stops a text field from minting a day-one BERSERK.
+func (s *Store) SetPatternClaim(ctx context.Context, pattern string, e1rmKg float64, lift string) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO pattern_claims(pattern, e1rm_kg, lift, claimed_at)
+		VALUES (?,?,?,?)
+		ON CONFLICT(pattern) DO UPDATE SET
+		  e1rm_kg = excluded.e1rm_kg, lift = excluded.lift, claimed_at = excluded.claimed_at`,
+		pattern, e1rmKg, lift, time.Now().UTC().Format(time.RFC3339))
+	return err
+}
+
+// SetSkill toggles one of the twelve skill unlocks.
+func (s *Store) SetSkill(ctx context.Context, skill string, unlocked bool) error {
+	if !unlocked {
+		_, err := s.db.ExecContext(ctx, `DELETE FROM skill_unlocks WHERE skill = ?`, skill)
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO skill_unlocks(skill, unlocked_at) VALUES (?,?)
+		ON CONFLICT(skill) DO NOTHING`,
+		skill, time.Now().UTC().Format(time.RFC3339))
+	return err
 }

@@ -19,6 +19,8 @@ import androidx.compose.ui.unit.dp
 import com.mrcha.gymlogger.MainViewModel
 import com.mrcha.gymlogger.Prefs
 import com.mrcha.gymlogger.net.LogResult
+import com.mrcha.gymlogger.net.Attributes
+import com.mrcha.gymlogger.net.PatternScore
 import com.mrcha.gymlogger.net.Rank
 import com.mrcha.gymlogger.net.Recommendation
 
@@ -92,35 +94,169 @@ fun GymApp(
 @Composable
 private fun RankCard(rank: Rank) {
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(rank.tier, style = MaterialTheme.typography.headlineSmall)
-                Text("%.1f".format(rank.score), style = MaterialTheme.typography.titleMedium)
+                Text(rank.rank, style = MaterialTheme.typography.headlineSmall)
+                Text("RS %.1f".format(rank.rs), style = MaterialTheme.typography.titleMedium)
             }
 
-            // Progress within the current division, so the bar moves on a
-            // weekly timescale rather than looking frozen for months.
-            if (rank.nextTier.isNotBlank()) {
-                val step = 100f / 21f
-                val progress = ((step - rank.toNext.toFloat()) / step).coerceIn(0f, 1f)
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.fillMaxWidth(),
-                )
+            // Erratum 1, and this is the whole point of the switch: below the
+            // Berserk boundary a composite is the honest readout, and at the
+            // boundary it is misleading, because a lifter can sit above the old
+            // RS 80 threshold and still be one point of MASTERY short. So the
+            // top two ranks get the binding gate instead of a progress bar.
+            if (rank.showGates) {
+                GateReadout(rank)
+            } else {
+                BandProgress(rank)
+            }
+
+            AttributeRow(rank.attributes)
+            PatternList(rank.patterns)
+
+            if (rank.weakLink.isNotBlank()) {
                 Text(
-                    "%.1f to %s".format(rank.toNext, rank.nextTier),
+                    rank.weakLink,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            if (rank.blood.total > 0) {
+                Text(
+                    "%s  ·  %.0f Blood (+%.0f last 30d)  ·  %.0f to %s".format(
+                        rank.blood.tierName, rank.blood.total,
+                        rank.blood.last30d, rank.blood.toNext, rank.blood.nextTier,
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
 
             Text(
-                "consistency %.0f  ·  strength %.0f".format(rank.consistency, rank.strength),
+                "threat %.0f  ·  confidence %.0f%%  ·  journey %d sessions".format(
+                    rank.threatLevel, rank.confidence * 100, rank.journey.sessions,
+                ),
                 style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            rank.notes.forEach {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BandProgress(rank: Rank) {
+    if (rank.nextRank.isBlank()) return
+    LinearProgressIndicator(
+        progress = { rank.bandProgress.toFloat().coerceIn(0f, 1f) },
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Text(
+        "RS %.0f / %.0f → %s".format(rank.rs, rank.rs + rank.toNext, rank.nextRank),
+        style = MaterialTheme.typography.bodySmall,
+    )
+}
+
+// GateReadout is the table Erratum 1 specifies: every gate, its value against
+// its threshold, and the computed fix for whichever one is binding. No
+// composite number appears here at all.
+@Composable
+private fun GateReadout(rank: Rank) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        rank.berserk.gates.forEach { gate ->
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    "%-11s %5.1f / %.0f".format(gate.name, gate.value, gate.threshold),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                )
+                Text(
+                    if (gate.pass) "✓" else "✗",
+                    color = if (gate.pass) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+
+        Text(
+            "%-11s %d / 6 verified".format("PATTERNS", rank.berserk.patternsVerified),
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+        )
+
+        Spacer(Modifier.height(4.dp))
+        Text(rank.berserk.summary, style = MaterialTheme.typography.bodyMedium)
+
+        // The first failing gate carries a computed instruction rather than
+        // encouragement: what number has to move, and to what.
+        rank.berserk.gates.firstOrNull { !it.pass && it.fix.isNotBlank() }?.let {
+            Text(
+                it.fix,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+
+        // Erratum 6: a user looking at a passing pattern floor and a failing
+        // MIGHT gate will otherwise assume a bug, so the reason is stated.
+        if (rank.berserk.note.isNotBlank()) {
+            Text(
+                rank.berserk.note,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AttributeRow(a: Attributes) {
+    Text(
+        "MIGHT %.0f  DOM %.0f  FRAME %.0f  VIGOR %.0f  DISC %.0f  MAST %.0f".format(
+            a.might, a.dominion, a.frame, a.vigor, a.discipline, a.mastery,
+        ),
+        style = MaterialTheme.typography.bodySmall,
+        fontFamily = FontFamily.Monospace,
+    )
+}
+
+@Composable
+private fun PatternList(patterns: List<PatternScore>) {
+    Column {
+        patterns.forEach { p ->
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    "%-18s %5.1f".format(p.name, p.score),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                )
+                // An imputed score is an estimate standing in for data the app
+                // has never seen, and saying so is what makes the nudge work.
+                Text(
+                    if (p.imputed) "untested" else p.status.lowercase(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (p.imputed) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

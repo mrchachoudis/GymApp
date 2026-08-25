@@ -133,3 +133,96 @@ naturally allows one fresh reminder.
   computed against today's bodyweight rather than the bodyweight at the time.
 - **The coach is single-turn by design**, so it cannot answer "what do you mean".
   A conversational mode would need its own prompt and its own history handling.
+
+## The Berserk rank system, and what the specs did not settle
+
+The rank engine implements the Berserk Rank System v1.3, which arrived as three
+layers: v1.0 supplies the mathematics, v1.2 patches the ladder and the gates and
+restores v1.0's formulas verbatim, and v1.3 is errata over v1.2. Where the
+layers disagree the later one wins, and each such site is marked in the code
+with its erratum number.
+
+Five things were underdetermined. Each is marked `CONSTRUCTED` at its site.
+
+**The two machine coefficients.** v1.0 §4.2 lists machine chest press and hack
+squat with a confidence but no conversion coefficient. They are given 1.00 and
+the machine cap of 85, on the same reasoning that caps leg press: without a
+per-machine calibration the load number is unanchored, so it may support a
+mid-range score and no more.
+
+**Weekly hard sets.** v1.0 §6.3 wants a per-muscle-group median. There is no
+exercise-to-muscle-group map in this database, so the six movement patterns
+stand in as the volume units and the median is taken across them. Adding a
+muscle-group map makes this exact without changing the formula.
+
+**Session density.** Sessions carry no duration, so working-sets-per-hour uses
+the `avg_session_minutes` setting rather than measured elapsed time.
+
+**Technical quality.** v1.0 §6.5 wants the ROM- or tempo-verified share of sets.
+The schema has no such flag; `clean_reps` is the closest honest signal it does
+carry, so a set counts as verified when `clean_reps` is present and accounts for
+every rep. Sets where the user reported partials correctly fail to count.
+
+**The milestone list.** v1.2 Patch 7 prices a milestone at 60 Blood and gives
+two examples without enumerating the set. The list is built from numbers the
+specs already treat as landmarks: the §6.1 DOMINION targets, the §6.2 FFMI
+100-point mark, and pattern scores at each multiple of ten above 60.
+
+### Four places the specs contradict their own arithmetic
+
+These are resolved in favour of the arithmetic, and each has a test.
+
+**The Blood threshold table.** `Blood_required(n) = 1200 × (n−1)^1.4` reproduces
+the published tiers II–V exactly (1200, 3167, 5587, 8357) and then diverges from
+the two illustrative rows at the bottom: it gives ~18,282 for VIII against a
+printed 18,600, and ~34,437 for XII against a printed 38,900. The formula is the
+generative rule both documents state, so it wins. If the printed numbers were
+meant to be authoritative the exponent is nearer 1.44.
+
+**The height correction.** v1.0 §2.2 says the leverage term moves references by
+"at most about ±6%". With p = 0.50 on the presses the true extremes across
+155–205 cm are +7.2% and −6.8%. The prose is a round number rather than a bound;
+the magnitude is what matters and the test holds it at 7.5%.
+
+**The BF_mod floor.** Erratum 2 floors the body-fat modifier at 0.50, but with
+v1.0's coefficients the steepest branch only reaches 0.50 at 70.6% body fat, and
+a reported value is already bounded to 60%. The clamp is therefore a guard
+against a future retune, not a behaviour any user will meet. FRAME does still
+reach zero, but through `S_ffmi` rather than the modifier.
+
+**Rank on day one.** v1.2 Patch 3 promotes only after ten consecutive qualifying
+days; v1.1 §21 says rank is current capability granted *immediately* from real
+numbers. On day one these cannot both hold, and holding a lifter who walks in
+benching 110 kg at COMMONER for ten days is precisely the insult §21 exists to
+prevent. The first grant is exempt; the hold applies to every change after it.
+
+### Why the Berserk boundary shows gates instead of a score
+
+Erratum 1 deletes the RS condition from the Berserk requirement, because the six
+attribute gates already guarantee RS ≥ 79.86 and the condition therefore carried
+no information beyond a 0.14 sliver of artifact. The consequence that matters is
+in the UI. Below the boundary the composite is the honest readout: "RS 61 / 62 →
+APOSTLE". At the boundary it is actively misleading, because a lifter can sit
+above the old threshold and still be one point of MASTERY from the rank. So the
+top two ranks render the gate table, with the binding gate carrying a computed
+instruction rather than encouragement.
+
+The same erratum makes every gate hard. Compensation between attributes is fine
+on ranks 1–13, where the RS band *is* the definition — it is not fine at Berserk,
+because Berserk is specifically a claim about completeness. A 95 MIGHT does not
+purchase a 65 VIGOR.
+
+### Why the pattern floor is not the target
+
+Erratum 6: a perfectly balanced lifter at exactly the 78 pattern floor fails the
+MIGHT ≥ 85 gate by seven points, because MIGHT equals the pattern score when all
+six are equal. The floor exists to permit *imbalance* — one pattern at 78 carried
+by others above 85 — not to define the target, and the minimum balanced pattern
+score for MIGHT 85 is 85. A user staring at a passing floor and a failing MIGHT
+gate would otherwise assume a bug, so the readout says this explicitly, and the
+suggestion is computed by solving the MIGHT formula for the weakest pattern.
+
+That solve is numerical rather than closed-form: once the weakest pattern rises
+past the second lowest, a different pair forms the `LOW` term, so the algebra has
+a kink in it. MIGHT is monotonic in any single pattern score, so bisection is
+exact to the displayed precision and cannot pick the wrong root.

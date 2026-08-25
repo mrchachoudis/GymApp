@@ -43,13 +43,86 @@ data class SessionContext(
 )
 
 @Serializable
-data class Rank(
+data class Attributes(
+    val might: Double = 0.0,
+    val dominion: Double = 0.0,
+    val frame: Double = 0.0,
+    val vigor: Double = 0.0,
+    val discipline: Double = 0.0,
+    val mastery: Double = 0.0,
+)
+
+@Serializable
+data class PatternScore(
+    val pattern: String = "",
+    val name: String = "",
     val score: Double = 0.0,
-    val tier: String = "",
-    val consistency: Double = 0.0,
-    val strength: Double = 0.0,
+    val status: String = "",
+    @SerialName("source_lift") val sourceLift: String = "",
+    @SerialName("ref_kg") val refKg: Double = 0.0,
+    val imputed: Boolean = false,
+    val capped: Boolean = false,
+)
+
+@Serializable
+data class Gate(
+    val name: String = "",
+    val value: Double = 0.0,
+    val threshold: Double = 0.0,
+    val pass: Boolean = false,
+    val fix: String = "",
+)
+
+@Serializable
+data class BerserkStatus(
+    val qualified: Boolean = false,
+    val gates: List<Gate> = emptyList(),
+    @SerialName("patterns_verified") val patternsVerified: Int = 0,
+    @SerialName("min_pattern") val minPattern: Double = 0.0,
+    @SerialName("min_pattern_name") val minPatternName: String = "",
+    val failing: Int = 0,
+    val summary: String = "",
+    val note: String = "",
+)
+
+@Serializable
+data class Blood(
+    val total: Double = 0.0,
+    @SerialName("tier_name") val tierName: String = "",
     @SerialName("next_tier") val nextTier: String = "",
     @SerialName("to_next") val toNext: Double = 0.0,
+    val progress: Double = 0.0,
+    @SerialName("last_30d") val last30d: Double = 0.0,
+)
+
+@Serializable
+data class Journey(
+    val days: Int = 0,
+    val sessions: Int = 0,
+    @SerialName("rs_gain") val rsGain: Double = 0.0,
+)
+
+@Serializable
+data class Rank(
+    val rs: Double = 0.0,
+    val rank: String = "",
+    @SerialName("rank_index") val rankIndex: Int = 0,
+    @SerialName("eligible_index") val eligibleIndex: Int = 0,
+    val attributes: Attributes = Attributes(),
+    val patterns: List<PatternScore> = emptyList(),
+    val berserk: BerserkStatus = BerserkStatus(),
+    val blood: Blood = Blood(),
+    @SerialName("next_rank") val nextRank: String = "",
+    @SerialName("to_next") val toNext: Double = 0.0,
+    @SerialName("band_progress") val bandProgress: Double = 0.0,
+    // Erratum 1: at the Berserk boundary a composite score is actively
+    // misleading, so the server tells the client to render gates instead.
+    @SerialName("show_gates") val showGates: Boolean = false,
+    @SerialName("threat_level") val threatLevel: Double = 100.0,
+    val confidence: Double = 0.0,
+    val journey: Journey = Journey(),
+    @SerialName("weak_link") val weakLink: String = "",
+    val notes: List<String> = emptyList(),
 )
 
 @Serializable
