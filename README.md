@@ -52,6 +52,7 @@ that lift forever.
 | `internal/store` | SQLite schema and persistence |
 | `internal/validate` | The gate between the model and the database |
 | `internal/contextbuilder` | PR maths, flags, staleness, progression suggestion |
+| `internal/muscle` | Exercise-to-muscle-group mapping over a 1,318-entry library; per-group volume |
 | `internal/berserk` | Berserk Rank System v1.3: six attributes, six movement patterns, the fourteen-rank ladder, and the Blood economy |
 | `internal/scheduler` | Split rotation, recovery, quiet hours, notifications |
 | `internal/llm` | OpenCode client, offline stub, output sanitizers |

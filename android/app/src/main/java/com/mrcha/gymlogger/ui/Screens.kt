@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import com.mrcha.gymlogger.MainViewModel
 import com.mrcha.gymlogger.Prefs
 import com.mrcha.gymlogger.net.LogResult
+import com.mrcha.gymlogger.net.MuscleReport
 import com.mrcha.gymlogger.net.Attributes
 import com.mrcha.gymlogger.net.PatternScore
 import com.mrcha.gymlogger.net.Rank
@@ -64,6 +65,7 @@ fun GymApp(
         ) {
             vm.rank?.let { RankCard(it) }
             vm.next?.let { NextSessionCard(it) }
+            vm.muscles?.let { MuscleCard(it) }
 
             LogInput(
                 value = vm.draft,
@@ -255,6 +257,50 @@ private fun PatternList(patterns: List<PatternScore>) {
                     style = MaterialTheme.typography.bodySmall,
                     color = if (p.imputed) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+// MuscleCard adapts the server's per-group report onto the muscle map. The map
+// itself takes only what it draws -- name, set count, total, and the neglected
+// line -- so the wire type is flattened here rather than pushed into it.
+@Composable
+private fun MuscleCard(report: MuscleReport) {
+    // Zero-volume groups are dropped from the bars: the figures already show a
+    // drained muscle as unworked, and a row reading "CALVES 0" under it is the
+    // same fact twice. The neglected line is where absence gets named.
+    val volumes = report.volumes
+        .filter { it.sets > 0 }
+        .sortedByDescending { it.sets }
+        .map { MuscleVolume(it.name, kotlin.math.round(it.sets).toInt()) }
+
+    if (volumes.isEmpty()) return
+
+    val neglected = report.volumes
+        .firstOrNull { it.name == report.neglected }
+        ?.let { v ->
+            if (v.lastTrained.isBlank()) "${report.neglected} · NEVER LOGGED"
+            else "${report.neglected} · 0 SETS IN ${v.daysSince} D"
+        }
+        ?: report.neglected.takeIf { it.isNotBlank() }?.let { "$it · NEVER LOGGED" }
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            MuscleMap(
+                volumes = volumes,
+                totalSets = report.totalSets,
+                neglected = neglected,
+            )
+            // Unmapped exercises are surfaced, not swallowed. Volume credited to
+            // nothing is invisible in the figures above, and the only way a
+            // mapping gap gets noticed is if the app admits to it.
+            if (report.unmatched.isNotEmpty()) {
+                Text(
+                    "not mapped to a muscle group: " + report.unmatched.joinToString(", "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }

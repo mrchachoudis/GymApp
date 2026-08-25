@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mrcha/gymlogger/internal/model"
+	"github.com/mrcha/gymlogger/internal/muscle"
 	"github.com/mrcha/gymlogger/internal/store"
 )
 
@@ -301,90 +302,68 @@ type volumeStats struct {
 
 // volumeAndRest derives the VIGOR inputs from the session log.
 //
-// CONSTRUCTED, twice, and both are marked so they can be replaced with exact
-// measures later:
+// v1.0 6.3 asks for weekly hard sets as a per-muscle-group median. That used to
+// be approximated with the six movement patterns standing in as volume units,
+// because no exercise-to-muscle-group mapping existed anywhere in the app. It
+// now comes from internal/muscle, so the term means what the spec said, and the
+// CONSTRUCTED note that stood here is retired.
 //
-//  1. v1.0 6.3 wants weekly hard sets as a per-muscle-group median. This
-//     database has no exercise-to-muscle-group map, so the six movement
-//     patterns stand in as the volume units: sets are attributed by the
-//     substitution table and the median is taken across patterns. Adding a
-//     muscle-group map makes this exact without changing the formula.
-//  2. Sessions carry no duration, so sets-per-hour uses the configurable
-//     avg_session_minutes setting rather than a measured elapsed time.
+// One approximation remains and is still marked: sessions carry no duration, so
+// sets-per-hour uses the configurable avg_session_minutes setting rather than a
+// measured elapsed time.
 func volumeAndRest(ctx context.Context, st *store.Store, asOf time.Time) (volumeStats, float64, error) {
 	const weeks = 4
+	var vs volumeStats
+
+	weekly, err := muscle.WeeklyMedian(ctx, st, asOf, weeks)
+	if err != nil {
+		return vs, 0, err
+	}
+	vs.weeklyHardSets = weekly
+
 	end := st.LocalDate(asOf)
 	start := asOf.AddDate(0, 0, -weeks*7+1)
 
 	rows, err := st.DB().QueryContext(ctx, `
-		SELECT local_date, name, COUNT(*)
+		SELECT local_date, COUNT(*)
 		FROM v_sets
 		WHERE set_type IN ('working','backoff','drop')
 		  AND local_date >= ? AND local_date <= ?
-		GROUP BY local_date, name`, start.Format("2006-01-02"), end)
+		GROUP BY local_date`, start.Format("2006-01-02"), end)
 	if err != nil {
-		return volumeStats{}, 0, err
+		return vs, 0, err
 	}
 	defer rows.Close()
 
-	perWeekPattern := map[int]map[Pattern]float64{}
-	setsPerDay := map[string]float64{}
+	var perDay []float64
 	trainingDays := map[int]map[string]bool{}
-
 	for rows.Next() {
-		var ds, name string
+		var ds string
 		var n int
-		if err := rows.Scan(&ds, &name, &n); err != nil {
-			return volumeStats{}, 0, err
+		if err := rows.Scan(&ds, &n); err != nil {
+			return vs, 0, err
 		}
 		day, err := time.Parse("2006-01-02", ds)
 		if err != nil {
 			continue
 		}
 		week := int(day.Sub(start).Hours() / 24 / 7)
-		if perWeekPattern[week] == nil {
-			perWeekPattern[week] = map[Pattern]float64{}
+		if trainingDays[week] == nil {
 			trainingDays[week] = map[string]bool{}
 		}
 		trainingDays[week][ds] = true
-		setsPerDay[ds] += float64(n)
-		if sub, ok := substitutes[name]; ok {
-			perWeekPattern[week][sub.pattern] += float64(n)
-		}
+		perDay = append(perDay, float64(n))
 	}
 	if err := rows.Err(); err != nil {
-		return volumeStats{}, 0, err
+		return vs, 0, err
 	}
-
-	// Median hard sets across the six patterns, averaged over the weeks that
-	// actually contain training. A median rather than a mean because one
-	// pattern trained to death should not read as high overall work capacity.
-	var weekMedians []float64
-	for w := 0; w < weeks; w++ {
-		counts := make([]float64, 0, len(Patterns))
-		for _, pat := range Patterns {
-			counts = append(counts, perWeekPattern[w][pat])
-		}
-		sort.Float64s(counts)
-		weekMedians = append(weekMedians, (counts[2]+counts[3])/2)
-	}
-	var vs volumeStats
-	for _, m := range weekMedians {
-		vs.weeklyHardSets += m
-	}
-	vs.weeklyHardSets /= float64(weeks)
 
 	// Sets per hour, from the median training day.
-	var perDay []float64
-	for _, n := range setsPerDay {
-		perDay = append(perDay, n)
-	}
 	sort.Float64s(perDay)
 	if len(perDay) > 0 {
-		median := perDay[len(perDay)/2]
 		minutes := settingFloat(ctx, st, "avg_session_minutes", defaultSessionMinutes)
 		if minutes > 0 {
-			vs.setsPerHour = median / (minutes / 60)
+			vs.setsPerHour = perDay[len(perDay)/2] / (minutes / 60)
 		}
 	}
 

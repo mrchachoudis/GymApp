@@ -19,6 +19,7 @@ import (
 	"github.com/mrcha/gymlogger/internal/app"
 	"github.com/mrcha/gymlogger/internal/berserk"
 	"github.com/mrcha/gymlogger/internal/model"
+	"github.com/mrcha/gymlogger/internal/muscle"
 	"github.com/mrcha/gymlogger/internal/push"
 	"github.com/mrcha/gymlogger/internal/scheduler"
 	"github.com/mrcha/gymlogger/internal/store"
@@ -61,6 +62,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /v1/claims", s.auth(http.HandlerFunc(s.handleClaims)))
 	mux.Handle("POST /v1/skills", s.auth(http.HandlerFunc(s.handleSkills)))
 	mux.Handle("GET /v1/blood", s.auth(http.HandlerFunc(s.handleBlood)))
+	mux.Handle("GET /v1/muscles", s.auth(http.HandlerFunc(s.handleMuscles)))
 
 	return logging(s.Logger, mux)
 }
@@ -299,6 +301,26 @@ func (s *Server) handleBlood(w http.ResponseWriter, r *http.Request) {
 		out = append(out, e)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"blood": total, "recent": out})
+}
+
+// handleMuscles reports per-group volume over a trailing window, which is what
+// the muscle map screen renders.
+func (s *Server) handleMuscles(w http.ResponseWriter, r *http.Request) {
+	days := 7
+	if v := r.URL.Query().Get("days"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 3650 {
+			days = n
+		}
+	}
+	to := time.Now()
+	from := to.AddDate(0, 0, -days+1)
+
+	rep, err := muscle.Window(r.Context(), s.Store, from, to)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rep)
 }
 
 func (s *Server) handleNext(w http.ResponseWriter, r *http.Request) {

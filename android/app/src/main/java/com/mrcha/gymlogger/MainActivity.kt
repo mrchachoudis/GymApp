@@ -18,6 +18,7 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import com.mrcha.gymlogger.net.ApiClient
 import com.mrcha.gymlogger.net.LogResult
+import com.mrcha.gymlogger.net.MuscleReport
 import com.mrcha.gymlogger.net.Rank
 import com.mrcha.gymlogger.net.Recommendation
 import com.mrcha.gymlogger.push.GymMessagingService
@@ -32,6 +33,7 @@ class MainViewModel : ViewModel() {
     var lastResult by mutableStateOf<LogResult?>(null)
     var rank by mutableStateOf<Rank?>(null)
     var next by mutableStateOf<Recommendation?>(null)
+    var muscles by mutableStateOf<MuscleReport?>(null)
     var error by mutableStateOf<String?>(null)
     var showSettings by mutableStateOf(false)
 
@@ -46,6 +48,7 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch {
             client.rank().onSuccess { rank = it }
             client.next().onSuccess { next = it }
+            client.muscles().onSuccess { muscles = it }
         }
     }
 

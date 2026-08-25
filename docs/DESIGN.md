@@ -142,7 +142,8 @@ restores v1.0's formulas verbatim, and v1.3 is errata over v1.2. Where the
 layers disagree the later one wins, and each such site is marked in the code
 with its erratum number.
 
-Five things were underdetermined. Each is marked `CONSTRUCTED` at its site.
+Five things were underdetermined. Each is marked `CONSTRUCTED` at its site;
+one of the five has since been resolved and is struck through below.
 
 **The two machine coefficients.** v1.0 §4.2 lists machine chest press and hack
 squat with a confidence but no conversion coefficient. They are given 1.00 and
@@ -150,10 +151,10 @@ the machine cap of 85, on the same reasoning that caps leg press: without a
 per-machine calibration the load number is unanchored, so it may support a
 mid-range score and no more.
 
-**Weekly hard sets.** v1.0 §6.3 wants a per-muscle-group median. There is no
-exercise-to-muscle-group map in this database, so the six movement patterns
-stand in as the volume units and the median is taken across them. Adding a
-muscle-group map makes this exact without changing the formula.
+**Weekly hard sets.** ~~v1.0 §6.3 wants a per-muscle-group median, and there is
+no exercise-to-muscle-group map.~~ **Resolved.** `internal/muscle` now supplies
+the mapping, and `V_volume` takes the real per-group median. See "The muscle
+map" below.
 
 **Session density.** Sessions carry no duration, so working-sets-per-hour uses
 the `avg_session_minutes` setting rather than measured elapsed time.
@@ -226,3 +227,81 @@ That solve is numerical rather than closed-form: once the weakest pattern rises
 past the second lowest, a different pair forms the `LOW` term, so the algebra has
 a kink in it. MIGHT is monotonic in any single pattern score, so bisection is
 exact to the displayed precision and cannot pick the wrong root.
+
+## The muscle map, and where its data comes from
+
+`internal/muscle` answers one question the sets table cannot: which muscles did
+this exercise train. Two things needed it — VIGOR's `V_volume`, which v1.0 §6.3
+defines as a per-muscle-group median, and the muscle map screen, which shades a
+body diagram by how much work each group got.
+
+### Provenance, and what was deliberately not taken
+
+The exercise library is derived from `hasaneyldrm/exercises-dataset`, by way of
+openGym, which had already slimmed and normalized it. That dataset is **not**
+under openGym's licence: openGym's own `NOTICE.md` records it as Creative
+Commons under the upstream terms, and it is used here on that basis. Only four
+fields are kept — name, equipment, primary target, secondary muscles. No
+instructional text, image or animation is reproduced.
+
+**Nothing else from openGym is used.** Its application code is AGPL-3.0, and
+copying any of it would relicense this repository. The body diagram in
+`MuscleMap.kt` is our own Compose drawing, not openGym's `body-paths.js`.
+
+### Name resolution is the hard part
+
+The parser emits what a lifter says — "bench press", "rdl", "squat". The dataset
+names things formally and equipment first — "barbell bench press", "barbell
+romanian deadlift", "barbell full squat". Of the thirty-seven lifts the rank
+system scores, **five** match by name. A bare join finds almost nothing.
+
+So resolution runs four passes, most confident first: a hand-written alias
+table, exact match, an equipment-prefixed retry ("bench press" + barbell →
+"barbell bench press"), and finally token containment where every word of the
+logged name must appear in the candidate. Ties break toward the shortest name,
+which prefers the plain movement over an exotic variant.
+
+The alias table is asserted by test, because an alias pointing at a name the
+dataset does not contain fails *silently* — the lookup falls through to the
+fuzzy pass and either finds something wrong or finds nothing. Thirteen of the
+first draft's aliases were wrong exactly this way.
+
+### The dataset is glutes-biased, and it had to be corrected
+
+The upstream data labels **144** upper-leg exercises glutes-primary, against 44
+for quads and 27 for hamstrings. That includes the back squat, the front squat,
+the hack squat, the leg press and the Romanian deadlift. Taken literally, a
+lifter squatting three times a week reads as barely training quads, which
+distorts both the body diagram and the median behind `V_volume`.
+
+`primaryOverride` corrects eleven entries. The corrections are deliberately
+narrow — only compound squat and hinge patterns, and only where the dataset's
+*own* secondary list already names the muscle being promoted. The demoted group
+is not dropped: it falls back to a secondary and keeps half credit, so an
+override moves emphasis rather than deleting work the lift genuinely does. The
+conventional deadlift is left alone at glutes-primary, because it is a hip hinge
+and there is no case for promoting something else.
+
+### Why a median, and why only the major groups
+
+A set counts in full for its primary target and at half for each secondary, so a
+bench press registers as triceps work without reading as a triceps session.
+
+`V_volume` then takes the **median** across groups, not the mean: one muscle
+trained into the ground must not read as high overall work capacity, which is
+precisely what the term exists to not reward. The test for this logs 45 sets of
+curls in a week and gets a median of 0.0, against 12.0 for a balanced week.
+
+The median runs over eight *major* groups, excluding calves, forearms and core.
+Their volume norms are different enough that including them drags the median
+down for everyone who trains sensibly, which would turn VIGOR into a measure of
+whether someone does direct calf work.
+
+### Unmapped exercises are surfaced, never swallowed
+
+An exercise that resolves to nothing is reported by name, in the API payload and
+on screen. Volume credited to no group is invisible in the figures, and the only
+way a mapping gap gets noticed is if the app admits to it. For the same reason
+an unknown lift is never forced into a group: volume attributed to the wrong
+muscle is worse than volume left uncounted, because the second is visible as a
+gap and the first is not.

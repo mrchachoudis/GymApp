@@ -126,6 +126,28 @@ data class Rank(
 )
 
 @Serializable
+data class MuscleVolumeDto(
+    val group: String = "",
+    val name: String = "",
+    val sets: Double = 0.0,
+    @SerialName("raw_sets") val rawSets: Int = 0,
+    @SerialName("last_trained") val lastTrained: String = "",
+    @SerialName("days_since") val daysSince: Int = 0,
+)
+
+@Serializable
+data class MuscleReport(
+    val from: String = "",
+    val to: String = "",
+    val volumes: List<MuscleVolumeDto> = emptyList(),
+    @SerialName("total_sets") val totalSets: Int = 0,
+    // Exercises the server could not map to a muscle group. Shown rather than
+    // hidden: anything here is work the user did that no group was credited for.
+    val unmatched: List<String> = emptyList(),
+    val neglected: String = "",
+)
+
+@Serializable
 data class LogResult(
     @SerialName("session_id") val sessionId: Long = 0,
     @SerialName("pending_id") val pendingId: Long = 0,
@@ -175,6 +197,8 @@ class ApiClient(
     suspend fun rank(): Result<Rank> = get("/v1/rank")
 
     suspend fun next(): Result<Recommendation> = get("/v1/next")
+
+    suspend fun muscles(days: Int = 7): Result<MuscleReport> = get("/v1/muscles?days=$days")
 
     suspend fun confirm(pendingId: Long): Result<LogResult> =
         rawPost("/v1/pending/$pendingId/confirm", "")
