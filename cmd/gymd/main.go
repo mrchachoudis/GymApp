@@ -80,6 +80,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Demo media is optional and lives outside the repository; see
+	// scripts/fetch-media.sh. Without it the exercise library still works, just
+	// without animations.
+	mediaDir := env("GYM_MEDIA_DIR", "")
+	if mediaDir != "" {
+		if _, err := os.Stat(mediaDir); err != nil {
+			logger.Warn("GYM_MEDIA_DIR is set but unreadable, serving the library without demos",
+				"dir", mediaDir, "err", err)
+			mediaDir = ""
+		} else {
+			logger.Info("serving exercise media", "dir", mediaDir)
+		}
+	}
+
 	srv := &api.Server{
 		App:       application,
 		Store:     st,
@@ -87,6 +101,7 @@ func main() {
 		Push:      sender,
 		Logger:    logger,
 		AuthToken: authToken,
+		MediaDir:  mediaDir,
 	}
 
 	httpSrv := &http.Server{

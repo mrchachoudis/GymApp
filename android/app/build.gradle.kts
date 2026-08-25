@@ -96,6 +96,10 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // Coil for the exercise demos. coil-gif is what makes the animations move;
+    // without it the library still renders, with the still image only.
+    implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("io.coil-kt:coil-gif:2.7.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 

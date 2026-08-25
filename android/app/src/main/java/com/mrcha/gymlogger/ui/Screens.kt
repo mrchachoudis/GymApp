@@ -5,6 +5,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
@@ -12,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -33,6 +35,13 @@ fun GymApp(
     onMic: () -> Unit,
     onSettingsSaved: () -> Unit,
 ) {
+    // One loader for the whole app, carrying the bearer token and GIF decoding.
+    // Rebuilt only when the token changes, so scrolling the library does not
+    // throw away the memory cache.
+    val context = LocalContext.current
+    val token = vm.authHeader()
+    val imageLoader = remember(token) { buildImageLoader(context, token) }
+
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(vm.error) {
@@ -48,6 +57,9 @@ fun GymApp(
             TopAppBar(
                 title = { Text("Gym Logger") },
                 actions = {
+                    IconButton(onClick = { vm.openLibrary() }) {
+                        Icon(Icons.Default.FitnessCenter, contentDescription = "Exercises")
+                    }
                     IconButton(onClick = { vm.showSettings = true }) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
@@ -79,6 +91,18 @@ fun GymApp(
 
             Spacer(Modifier.height(24.dp))
         }
+    }
+
+    if (vm.showLibrary) {
+        LibraryScreen(
+            state = vm.library,
+            imageLoader = imageLoader,
+            mediaUrl = vm::mediaUrl,
+            onQueryChange = vm::setLibraryQuery,
+            onFilter = vm::setLibraryFilter,
+            onLoadMore = vm::loadMoreExercises,
+            onClose = { vm.showLibrary = false },
+        )
     }
 
     if (vm.showSettings) {
@@ -501,3 +525,31 @@ private fun SettingsDialog(prefs: Prefs, onDismiss: () -> Unit, onSaved: () -> U
         },
     )
 }
+
+/**
+ * Coil loader for the exercise demos.
+ *
+ * Two things it has to do that the default cannot: attach the bearer token,
+ * since the media route is authenticated like everything else, and decode GIFs,
+ * which needs the coil-gif decoder registered explicitly.
+ */
+private fun buildImageLoader(context: android.content.Context, token: String): coil.ImageLoader =
+    coil.ImageLoader.Builder(context)
+        .components {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                add(coil.decode.ImageDecoderDecoder.Factory())
+            } else {
+                add(coil.decode.GifDecoder.Factory())
+            }
+        }
+        .okHttpClient {
+            okhttp3.OkHttpClient.Builder()
+                .addInterceptor { chain ->
+                    val req = chain.request().newBuilder()
+                        .header("Authorization", "Bearer $token")
+                        .build()
+                    chain.proceed(req)
+                }
+                .build()
+        }
+        .build()

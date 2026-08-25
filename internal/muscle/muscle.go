@@ -7,25 +7,16 @@
 // was no exercise-to-muscle-group mapping anywhere in the app, and V_volume
 // stood in the six movement patterns as a documented approximation.
 //
-// # Provenance
-//
-// The exercise library in exercises.json is derived from
-// hasaneyldrm/exercises-dataset, by way of the openGym project which slimmed
-// and normalized it. That dataset is NOT under openGym's AGPL; openGym's own
-// NOTICE.md records it as Creative Commons under the upstream dataset's terms,
-// and it is used here on that basis. Only four fields are kept -- name,
-// equipment, primary target and secondary muscles -- and no instructional text,
-// image or animation is reproduced.
-//
-// Nothing else from openGym is used. Its application code is AGPL-3.0 and
-// copying it would relicense this repository.
+// The exercise data comes from internal/exercises, which owns the library and
+// records its provenance. This package holds only the anatomy layer on top:
+// which of eleven groups a dataset muscle name belongs to, and how a set is
+// split between the muscles it works.
 package muscle
 
 import (
-	_ "embed"
-	"encoding/json"
 	"strings"
-	"sync"
+
+	"github.com/mrcha/gymlogger/internal/exercises"
 )
 
 // Group is a recovery and volume unit. The eleven groups match the scheduler's
@@ -116,46 +107,29 @@ func GroupFor(name string) (Group, bool) {
 	return g, ok
 }
 
-// Entry is one library exercise, reduced to the fields the mapping needs.
+// Entry is one library exercise, reduced to the fields the mapping needs. It
+// is a view onto internal/exercises rather than a second copy, so the two can
+// never disagree about what a lift trains.
 type Entry struct {
-	Name      string   `json:"n"`
-	Equipment string   `json:"e"`
-	Target    string   `json:"t"`
-	Secondary []string `json:"s"`
+	Name      string
+	Equipment string
+	Target    string
+	Secondary []string
 }
 
-//go:embed exercises.json
-var libraryJSON []byte
-
-var (
-	loadOnce sync.Once
-	library  []Entry
-	byName   map[string][]Entry
-)
-
-func load() {
-	loadOnce.Do(func() {
-		if err := json.Unmarshal(libraryJSON, &library); err != nil {
-			// An embedded asset that does not parse is a build error wearing a
-			// runtime costume. Leave the library empty; every lookup then
-			// misses and the caller falls back, rather than panicking a service
-			// that is otherwise healthy.
-			library = nil
-			return
-		}
-		byName = make(map[string][]Entry, len(library))
-		for _, e := range library {
-			k := normalize(e.Name)
-			byName[k] = append(byName[k], e)
-		}
-	})
+func entryOf(e exercises.Exercise) Entry {
+	return Entry{Name: e.Name, Equipment: e.Equipment, Target: e.Target, Secondary: e.Secondary}
 }
 
-// Library exposes the parsed entries, for tests and for tooling that wants to
-// audit coverage.
+// Library exposes the entries, for tests and for tooling that wants to audit
+// coverage.
 func Library() []Entry {
-	load()
-	return library
+	src := exercises.All()
+	out := make([]Entry, len(src))
+	for i, e := range src {
+		out[i] = entryOf(e)
+	}
+	return out
 }
 
 // primaryOverride corrects a systematic bias in the upstream dataset.
@@ -203,7 +177,6 @@ const secondaryWeight = 0.5
 // everywhere -- a barbell row and a cable row differ in how much they ask of
 // the lower back. Pass an empty string when equipment is unknown.
 func Of(name, equipment string) (Weights, bool) {
-	load()
 	e, ok := lookup(name, equipment)
 	if !ok {
 		return nil, false
@@ -244,7 +217,6 @@ func Of(name, equipment string) (Weights, bool) {
 // Primary returns just the group an exercise most trains, which is what the
 // scheduler's recovery tracking wants.
 func Primary(name, equipment string) (Group, bool) {
-	load()
 	e, ok := lookup(name, equipment)
 	if !ok {
 		return "", false

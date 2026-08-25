@@ -148,6 +148,36 @@ data class MuscleReport(
 )
 
 @Serializable
+data class Exercise(
+    val id: String = "",
+    val name: String = "",
+    @SerialName("body_part") val bodyPart: String = "",
+    val equipment: String = "",
+    val target: String = "",
+    val secondary: List<String> = emptyList(),
+    val steps: List<String> = emptyList(),
+    val image: String = "",
+    val animation: String = "",
+)
+
+@Serializable
+data class ExercisePage(
+    val total: Int = 0,
+    val offset: Int = 0,
+    val exercises: List<Exercise> = emptyList(),
+)
+
+@Serializable
+data class Facet(val value: String = "", val count: Int = 0)
+
+@Serializable
+data class Facets(
+    @SerialName("body_parts") val bodyParts: List<Facet> = emptyList(),
+    val equipment: List<Facet> = emptyList(),
+    val targets: List<Facet> = emptyList(),
+)
+
+@Serializable
 data class LogResult(
     @SerialName("session_id") val sessionId: Long = 0,
     @SerialName("pending_id") val pendingId: Long = 0,
@@ -172,6 +202,9 @@ private data class LogRequest(val text: String)
 
 @Serializable
 private data class DeviceRequest(val token: String, val platform: String = "android")
+
+private fun String.encodeParam(): String =
+    java.net.URLEncoder.encode(this, "UTF-8")
 
 class ApiClient(
     private val baseUrl: String,
@@ -199,6 +232,35 @@ class ApiClient(
     suspend fun next(): Result<Recommendation> = get("/v1/next")
 
     suspend fun muscles(days: Int = 7): Result<MuscleReport> = get("/v1/muscles?days=$days")
+
+    suspend fun exercises(
+        query: String = "",
+        equipment: String = "",
+        target: String = "",
+        limit: Int = 50,
+        offset: Int = 0,
+    ): Result<ExercisePage> {
+        val params = buildList {
+            if (query.isNotBlank()) add("q=" + query.encodeParam())
+            if (equipment.isNotBlank()) add("equipment=" + equipment.encodeParam())
+            if (target.isNotBlank()) add("target=" + target.encodeParam())
+            add("limit=$limit")
+            add("offset=$offset")
+        }
+        return get("/v1/exercises?" + params.joinToString("&"))
+    }
+
+    suspend fun facets(): Result<Facets> = get("/v1/exercises/facets")
+
+    /**
+     * URL for a demo image or animation. Filenames come from the library, so
+     * this is never built from user input.
+     */
+    fun mediaUrl(kind: String, file: String): String =
+        baseUrl.trimEnd('/') + "/v1/media/" + kind + "/" + file
+
+    /** The token, so the image loader can authenticate the same as every other call. */
+    val bearer: String get() = authToken
 
     suspend fun confirm(pendingId: Long): Result<LogResult> =
         rawPost("/v1/pending/$pendingId/confirm", "")

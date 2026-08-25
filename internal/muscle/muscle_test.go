@@ -2,6 +2,8 @@ package muscle
 
 import (
 	"testing"
+
+	"github.com/mrcha/gymlogger/internal/exercises"
 )
 
 // TestEveryAliasResolves is the test that matters most in this package. An
@@ -10,9 +12,8 @@ import (
 // finds nothing, and either way VIGOR quietly degrades with no error anywhere.
 // Thirteen of the first draft's aliases were wrong this way.
 func TestEveryAliasResolves(t *testing.T) {
-	load()
 	for from, to := range aliases {
-		if len(byName[normalize(to)]) == 0 {
+		if len(exercises.ByName(to)) == 0 {
 			t.Errorf("alias %q -> %q: target is not in the library", from, to)
 		}
 	}

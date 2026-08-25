@@ -3,6 +3,8 @@ package muscle
 import (
 	"sort"
 	"strings"
+
+	"github.com/mrcha/gymlogger/internal/exercises"
 )
 
 // Name resolution, which is the whole difficulty of using this library.
@@ -133,36 +135,14 @@ var equipmentCandidates = map[string][]string{
 	"bodyweight": {"body weight", "weighted", "assisted"},
 }
 
-func normalize(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
-	var b strings.Builder
-	prevSpace := false
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-			prevSpace = false
-		default:
-			// Hyphens, slashes, parentheses and degree signs all collapse to a
-			// single space, so "chest-supported row" and "chest supported row"
-			// normalize identically.
-			if !prevSpace {
-				b.WriteByte(' ')
-			}
-			prevSpace = true
-		}
-	}
-	return strings.TrimSpace(b.String())
-}
+// normalize delegates to the library so the two cannot disagree about what
+// counts as the same name.
+func normalize(s string) string { return exercises.Normalize(s) }
 
 func tokens(s string) []string { return strings.Fields(normalize(s)) }
 
 // lookup resolves a logged exercise to a library entry.
 func lookup(name, equipment string) (Entry, bool) {
-	load()
-	if len(byName) == 0 {
-		return Entry{}, false
-	}
 	key := normalize(name)
 	if key == "" {
 		return Entry{}, false
@@ -170,20 +150,20 @@ func lookup(name, equipment string) (Entry, bool) {
 
 	// 1. Hand-written alias.
 	if target, ok := aliases[key]; ok {
-		if e, ok := pick(byName[normalize(target)], equipment); ok {
+		if e, ok := pick(exercises.ByName(target), equipment); ok {
 			return e, true
 		}
 	}
 
 	// 2. Exact name match.
-	if e, ok := pick(byName[key], equipment); ok {
+	if e, ok := pick(exercises.ByName(key), equipment); ok {
 		return e, true
 	}
 
 	// 3. Equipment-prefixed match: "bench press" logged with a barbell becomes
 	// "barbell bench press", which is how the dataset would have named it.
 	for _, eq := range equipmentCandidates[strings.ToLower(equipment)] {
-		if e, ok := pick(byName[normalize(eq+" "+name)], equipment); ok {
+		if e, ok := pick(exercises.ByName(eq+" "+name), equipment); ok {
 			return e, true
 		}
 	}
@@ -198,22 +178,22 @@ func lookup(name, equipment string) (Entry, bool) {
 
 // pick chooses among entries sharing a name, preferring one whose equipment is
 // consistent with how the set was actually logged.
-func pick(candidates []Entry, equipment string) (Entry, bool) {
+func pick(candidates []*exercises.Exercise, equipment string) (Entry, bool) {
 	if len(candidates) == 0 {
 		return Entry{}, false
 	}
 	if len(candidates) == 1 {
-		return candidates[0], true
+		return entryOf(*candidates[0]), true
 	}
 	allowed := equipmentCandidates[strings.ToLower(equipment)]
 	for _, e := range candidates {
 		for _, eq := range allowed {
 			if e.Equipment == eq {
-				return e, true
+				return entryOf(*e), true
 			}
 		}
 	}
-	return candidates[0], true
+	return entryOf(*candidates[0]), true
 }
 
 func fuzzy(key, equipment string) (Entry, bool) {
@@ -232,7 +212,7 @@ func fuzzy(key, equipment string) (Entry, bool) {
 	}
 
 	var best []Entry
-	for _, e := range library {
+	for _, e := range exercises.All() {
 		hay := " " + normalize(e.Name) + " "
 		ok := true
 		for _, t := range want {
@@ -242,7 +222,7 @@ func fuzzy(key, equipment string) (Entry, bool) {
 			}
 		}
 		if ok {
-			best = append(best, e)
+			best = append(best, entryOf(e))
 		}
 	}
 	if len(best) == 0 {

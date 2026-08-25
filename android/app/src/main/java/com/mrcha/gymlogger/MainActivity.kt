@@ -23,6 +23,7 @@ import com.mrcha.gymlogger.net.Rank
 import com.mrcha.gymlogger.net.Recommendation
 import com.mrcha.gymlogger.push.GymMessagingService
 import com.mrcha.gymlogger.ui.GymApp
+import com.mrcha.gymlogger.ui.LibraryState
 import com.mrcha.gymlogger.ui.GymLoggerTheme
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -36,6 +37,11 @@ class MainViewModel : ViewModel() {
     var muscles by mutableStateOf<MuscleReport?>(null)
     var error by mutableStateOf<String?>(null)
     var showSettings by mutableStateOf(false)
+    var showLibrary by mutableStateOf(false)
+    var library by mutableStateOf(LibraryState())
+
+    /** Debounce token: only the newest search is allowed to publish results. */
+    private var searchSeq = 0
 
     private var api: ApiClient? = null
 
@@ -43,12 +49,98 @@ class MainViewModel : ViewModel() {
         api = if (prefs.isConfigured) ApiClient(prefs.baseUrl, prefs.authToken) else null
     }
 
+    /**
+     * Media lives behind the same bearer token as every other route, because
+     * the service is on the public internet and an unauthenticated file route
+     * is a file route anyone can walk.
+     */
+    fun mediaUrl(kind: String, file: String): String =
+        api?.mediaUrl(kind, file) ?: ""
+
+    fun authHeader(): String = api?.bearer ?: ""
+
     fun refresh() {
         val client = api ?: return
         viewModelScope.launch {
             client.rank().onSuccess { rank = it }
             client.next().onSuccess { next = it }
             client.muscles().onSuccess { muscles = it }
+        }
+    }
+
+    // ---------- exercise library ----------
+
+    fun openLibrary() {
+        showLibrary = true
+        if (library.facets == null) {
+            val client = api ?: return
+            viewModelScope.launch {
+                client.facets().onSuccess { library = library.copy(facets = it) }
+            }
+        }
+        if (library.exercises.isEmpty()) searchLibrary()
+    }
+
+    fun setLibraryQuery(q: String) {
+        library = library.copy(query = q)
+        searchLibrary()
+    }
+
+    fun setLibraryFilter(equipment: String, target: String) {
+        library = library.copy(equipment = equipment, target = target)
+        searchLibrary()
+    }
+
+    /**
+     * Runs a search, replacing the current page.
+     *
+     * Typing fires this per keystroke, so a sequence number decides who wins:
+     * a slow request for "inc" must not overwrite the results for "incline"
+     * just because it landed later.
+     */
+    private fun searchLibrary() {
+        val client = api ?: return
+        val seq = ++searchSeq
+        val q = library
+        library = q.copy(loading = true)
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(250) // debounce a burst of keystrokes
+            if (seq != searchSeq) return@launch
+            client.exercises(
+                query = q.query, equipment = q.equipment, target = q.target, offset = 0,
+            ).onSuccess {
+                if (seq != searchSeq) return@onSuccess
+                library = library.copy(
+                    exercises = it.exercises, total = it.total, loading = false,
+                )
+            }.onFailure {
+                if (seq == searchSeq) library = library.copy(loading = false)
+                error = it.message
+            }
+        }
+    }
+
+    fun loadMoreExercises() {
+        val client = api ?: return
+        val cur = library
+        if (cur.loading || cur.exercises.size >= cur.total) return
+        val seq = searchSeq
+        library = cur.copy(loading = true)
+        viewModelScope.launch {
+            client.exercises(
+                query = cur.query, equipment = cur.equipment, target = cur.target,
+                offset = cur.exercises.size,
+            ).onSuccess {
+                // A filter change while this was in flight invalidates the page.
+                if (seq != searchSeq) return@onSuccess
+                library = library.copy(
+                    exercises = library.exercises + it.exercises,
+                    total = it.total,
+                    loading = false,
+                )
+            }.onFailure {
+                library = library.copy(loading = false)
+            }
         }
     }
 

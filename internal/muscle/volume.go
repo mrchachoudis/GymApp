@@ -46,7 +46,6 @@ type Report struct {
 // warmups out of every other volume figure in the app: warmup count varies with
 // sleep and temperature, so including it makes week-over-week comparison noise.
 func Window(ctx context.Context, st *store.Store, from, to time.Time) (Report, error) {
-	load()
 	rep := Report{
 		From: from.Format("2006-01-02"),
 		To:   to.Format("2006-01-02"),

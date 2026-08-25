@@ -12,12 +12,14 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/mrcha/gymlogger/internal/app"
 	"github.com/mrcha/gymlogger/internal/berserk"
+	"github.com/mrcha/gymlogger/internal/exercises"
 	"github.com/mrcha/gymlogger/internal/model"
 	"github.com/mrcha/gymlogger/internal/muscle"
 	"github.com/mrcha/gymlogger/internal/push"
@@ -34,6 +36,10 @@ type Server struct {
 
 	// AuthToken is the shared secret the phone sends. Required.
 	AuthToken string
+
+	// MediaDir holds the exercise demo images and animations. Empty disables
+	// the media route; the library still works, without demos.
+	MediaDir string
 }
 
 func (s *Server) Routes() http.Handler {
@@ -63,6 +69,12 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /v1/skills", s.auth(http.HandlerFunc(s.handleSkills)))
 	mux.Handle("GET /v1/blood", s.auth(http.HandlerFunc(s.handleBlood)))
 	mux.Handle("GET /v1/muscles", s.auth(http.HandlerFunc(s.handleMuscles)))
+
+	// Exercise library.
+	mux.Handle("GET /v1/exercises", s.auth(http.HandlerFunc(s.handleExercises)))
+	mux.Handle("GET /v1/exercises/facets", s.auth(http.HandlerFunc(s.handleFacets)))
+	mux.Handle("GET /v1/exercises/{id}", s.auth(http.HandlerFunc(s.handleExercise)))
+	mux.Handle("GET /v1/media/{kind}/{file}", s.auth(http.HandlerFunc(s.handleMedia)))
 
 	return logging(s.Logger, mux)
 }
@@ -321,6 +333,81 @@ func (s *Server) handleMuscles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, rep)
+}
+
+func (s *Server) handleExercises(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	query := exercises.Query{
+		Text:      q.Get("q"),
+		BodyPart:  q.Get("body_part"),
+		Equipment: q.Get("equipment"),
+		Target:    q.Get("target"),
+	}
+	if v := q.Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 200 {
+			query.Limit = n
+		}
+	}
+	if v := q.Get("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			query.Offset = n
+		}
+	}
+	writeJSON(w, http.StatusOK, exercises.Search(query))
+}
+
+func (s *Server) handleFacets(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, exercises.AllFacets())
+}
+
+func (s *Server) handleExercise(w http.ResponseWriter, r *http.Request) {
+	ex, ok := exercises.ByID(r.PathValue("id"))
+	if !ok {
+		writeErr(w, http.StatusNotFound, errors.New("no such exercise"))
+		return
+	}
+	writeJSON(w, http.StatusOK, ex)
+}
+
+// handleMedia serves a demo image or animation from MediaDir.
+//
+// The files are not in this repository: they are 139 MB and the upstream
+// dataset asks that anyone redistributing them review its licence first, so the
+// operator populates a directory instead (scripts/fetch-media.sh). With no
+// directory configured the route reports 404 and the phone simply shows no
+// demo, which is a degraded library rather than a broken one.
+func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
+	if s.MediaDir == "" {
+		writeErr(w, http.StatusNotFound, errors.New("media is not configured on this server"))
+		return
+	}
+	kind := r.PathValue("kind")
+	if kind != "gif" && kind != "img" {
+		writeErr(w, http.StatusNotFound, errors.New("unknown media kind"))
+		return
+	}
+
+	// The filename is taken from the library, never from user input, but this
+	// route is on the public internet and a path-traversal bug here would serve
+	// arbitrary files off the mini PC. Reject anything that is not a bare name.
+	file := r.PathValue("file")
+	if file == "" || file != filepath.Base(file) || strings.HasPrefix(file, ".") {
+		writeErr(w, http.StatusBadRequest, errors.New("bad media name"))
+		return
+	}
+	switch strings.ToLower(filepath.Ext(file)) {
+	case ".gif", ".jpg", ".jpeg", ".png":
+	default:
+		writeErr(w, http.StatusBadRequest, errors.New("unsupported media type"))
+		return
+	}
+
+	full := filepath.Join(s.MediaDir, kind, file)
+	// Demo media never changes once fetched, so it is worth caching hard: these
+	// are 96 KB animations and the phone would otherwise refetch them on every
+	// scroll.
+	w.Header().Set("Cache-Control", "public, max-age=604800, immutable")
+	http.ServeFile(w, r, full)
 }
 
 func (s *Server) handleNext(w http.ResponseWriter, r *http.Request) {

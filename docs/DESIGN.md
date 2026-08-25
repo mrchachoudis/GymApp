@@ -305,3 +305,53 @@ way a mapping gap gets noticed is if the app admits to it. For the same reason
 an unknown lift is never forced into a group: volume attributed to the wrong
 muscle is worse than volume left uncounted, because the second is visible as a
 gap and the first is not.
+
+## The exercise library
+
+`internal/exercises` owns 1,318 movements: name, body part, equipment, the
+muscles they train, instruction steps, and the filenames of a still image and an
+animated demo. It is the single source of exercise data — `internal/muscle`
+reads it for the volume mapping rather than keeping its own copy, because a
+drift between "what the muscle map credits" and "what the library says a lift
+trains" is the kind of bug nobody notices for months.
+
+It ships embedded and gzipped: 837 KB of JSON compresses to 111 KB, inflated
+once on first use rather than at every start, since the CLI paths that only
+print a rank never touch it.
+
+### The media is not in this repository
+
+There are 2,648 files totalling about 139 MB — a 96 KB animation and a 6 KB
+still per exercise. The upstream dataset's notice asks that anyone
+redistributing the media review its licence first, so the repository stores only
+filenames and the service streams the bytes from a directory the operator
+populates via `scripts/fetch-media.sh`, pointed at by `GYM_MEDIA_DIR`.
+
+With no directory configured the route returns 404 and the phone renders the
+library with instructions and no pictures. That is a deliberate default: a fresh
+instance should show a working library, not a grid of broken-image icons.
+
+The media route sits behind the same bearer token as everything else, because
+the service is on the public internet and an unauthenticated file route is a
+file route anyone can walk. Filenames are validated to be bare names with an
+image extension — they always come from the library rather than from user input,
+but a path-traversal bug there would serve arbitrary files off the mini PC.
+
+### Search ranking, and why it is not a prefix match
+
+The dataset names movements equipment-first: "barbell bench press", "cable bench
+press", "smith bench press". Ranking a query by prefix therefore produces
+nonsense — "squat" returned *squat jerk* and *squat on bosu ball* ahead of the
+barbell squat, and "bench press" returned *band bench press* ahead of the
+barbell one. A library of this size is unusable that way.
+
+The strong signal is the opposite: an entry whose name **ends** with the query
+is almost certainly the movement being asked for. So ranking runs exact name,
+then suffix, then prefix, then contains; and within a tier, canonical equipment
+first (barbell, dumbbell, bodyweight, …) and shorter names before longer. The
+test pins the first result for nine common queries, which is the record of what
+"fixed" means here.
+
+Search runs on the server rather than over a copy downloaded to the phone. The
+library would otherwise have to be shipped, stored and kept in step with the
+service, and a query round-trip is cheaper than all three.
