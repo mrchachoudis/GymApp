@@ -2,6 +2,7 @@ package berserk
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"strconv"
 	"time"
@@ -232,4 +233,55 @@ func settingFloat(ctx context.Context, st *store.Store, key string, def float64)
 		return def
 	}
 	return f
+}
+
+// ---------- body fat measurement ----------
+
+// Sex affects the tape formula and nothing else in this package. The strength
+// standards are calibrated against a trained male lifter (v1.0 3.3), which is a
+// limitation of the source data rather than a design choice, and it is recorded
+// here so the gap is visible rather than implied.
+type Sex string
+
+const (
+	Male   Sex = "male"
+	Female Sex = "female"
+)
+
+// NavyBodyFat estimates body fat from tape measurements, which is the middle
+// option in v1.0 2.1's preference order: better than a BMI guess, worse than a
+// DEXA scan, and the only one of the three a user can do at home in a minute.
+//
+// All measurements are centimetres. hip is required for female and ignored for
+// male, which is the formula's own asymmetry, not ours.
+//
+// The result is clamped to a plausible human range. The formula involves a
+// logarithm of (waist - neck), so a mistyped waist smaller than the neck would
+// otherwise produce NaN and quietly poison every strength reference downstream.
+func NavyBodyFat(sex Sex, heightCm, neckCm, waistCm, hipCm float64) (float64, error) {
+	if heightCm <= 0 || neckCm <= 0 || waistCm <= 0 {
+		return 0, fmt.Errorf("height, neck and waist are required")
+	}
+	var bf float64
+	switch sex {
+	case Female:
+		if hipCm <= 0 {
+			return 0, fmt.Errorf("hip measurement is required for the female formula")
+		}
+		d := waistCm + hipCm - neckCm
+		if d <= 0 {
+			return 0, fmt.Errorf("waist plus hip must exceed neck; check the measurements")
+		}
+		bf = 495/(1.29579-0.35004*math.Log10(d)+0.22100*math.Log10(heightCm)) - 450
+	default:
+		d := waistCm - neckCm
+		if d <= 0 {
+			return 0, fmt.Errorf("waist must exceed neck; check the measurements")
+		}
+		bf = 495/(1.0324-0.19077*math.Log10(d)+0.15456*math.Log10(heightCm)) - 450
+	}
+	if math.IsNaN(bf) || math.IsInf(bf, 0) {
+		return 0, fmt.Errorf("measurements do not produce a usable estimate")
+	}
+	return round1(clamp(bf, 3, 60)), nil
 }

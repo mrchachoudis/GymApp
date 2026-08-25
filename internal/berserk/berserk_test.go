@@ -651,3 +651,56 @@ func TestFirstGrantIsImmediate(t *testing.T) {
 		t.Fatalf("a later promotion must still serve the ten-day hold, got %s", got.Name)
 	}
 }
+
+// TestUnlockedSkillsDoNotDeadlock is a regression test for a bug that bricked
+// the service permanently.
+//
+// The store caps the connection pool at one. AwardVerification used to INSERT a
+// Blood award while its own "SELECT skill FROM skill_unlocks" cursor was still
+// open, so the INSERT waited for a connection the SELECT was holding. It worked
+// for as long as the table was empty -- rows.Next() returned false immediately
+// and released the connection -- and hung forever the first time a user
+// unlocked a skill. Every later request queued behind it.
+//
+// The test runs with a timeout because the failure mode is a hang, not an error:
+// without the guard this blocks rather than fails, and a blocked test that never
+// reports is nearly as bad as the bug.
+func TestUnlockedSkillsDoNotDeadlock(t *testing.T) {
+	st := newStore(t)
+	ctx := context.Background()
+
+	// More than one skill, because a single row could still pass by accident if
+	// the cursor happened to be released after the last Next.
+	for _, sk := range []string{"pistol squat", "strict pull-up x10", "weighted dip"} {
+		if err := st.SetSkill(ctx, sk, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	logDay(t, st, "2026-08-20", lift("bench press", model.EquipBarbell, model.BasisTotal, 100, 3, 5))
+
+	c := NewCalculator(st)
+	done := make(chan error, 1)
+	go func() {
+		_, err := c.Compute(ctx, day(t, "2026-08-21"))
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("compute with unlocked skills: %v", err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("Compute deadlocked with skills unlocked; a write is running inside an open cursor")
+	}
+
+	// And the awards actually landed, so the fix did not simply skip them.
+	var n int
+	if err := st.DB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM blood_ledger WHERE source = 'skill'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 3 {
+		t.Errorf("expected 3 skill awards, got %d", n)
+	}
+}

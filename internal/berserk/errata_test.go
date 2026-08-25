@@ -684,3 +684,68 @@ func TestPerSideLoadsAreDoubled(t *testing.T) {
 		t.Fatalf("30 kg per side should equal 60 kg total: %.2f vs %.2f", perSide, total)
 	}
 }
+
+// ---------- body fat measurement ----------
+
+// TestNavyBodyFatIsPlausible checks the tape formula against reference figures.
+// It is the middle rung of v1.0 2.1's preference order and the only one a user
+// can actually do at home, so it needs to be right.
+func TestNavyBodyFatIsPlausible(t *testing.T) {
+	for _, tc := range []struct {
+		name                      string
+		sex                       Sex
+		h, neck, waist, hip, want float64
+	}{
+		// A lean-ish 178 cm male: 38 cm neck, 84 cm waist.
+		{"lean male", Male, 178, 38, 84, 0, 15.2},
+		// Same frame carrying more: 100 cm waist.
+		{"heavier male", Male, 178, 40, 100, 0, 25.0},
+		{"female", Female, 165, 32, 74, 96, 27.4},
+	} {
+		got, err := NavyBodyFat(tc.sex, tc.h, tc.neck, tc.waist, tc.hip)
+		if err != nil {
+			t.Errorf("%s: %v", tc.name, err)
+			continue
+		}
+		if math.Abs(got-tc.want) > 1.5 {
+			t.Errorf("%s: got %.1f%%, want about %.1f%%", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestNavyBodyFatRejectsNonsense is the important half. The formula takes the
+// logarithm of (waist - neck), so a mistyped waist smaller than the neck yields
+// NaN, and a NaN body fat silently poisons LBM and therefore every strength
+// reference in the system.
+func TestNavyBodyFatRejectsNonsense(t *testing.T) {
+	for _, tc := range []struct {
+		name                string
+		sex                 Sex
+		h, neck, waist, hip float64
+	}{
+		{"waist under neck", Male, 178, 45, 40, 0},
+		{"waist equals neck", Male, 178, 40, 40, 0},
+		{"zero height", Male, 0, 38, 84, 0},
+		{"missing waist", Male, 178, 38, 0, 0},
+		{"female without hip", Female, 165, 32, 74, 0},
+	} {
+		if got, err := NavyBodyFat(tc.sex, tc.h, tc.neck, tc.waist, tc.hip); err == nil {
+			t.Errorf("%s: expected an error, got %.1f%%", tc.name, got)
+		}
+	}
+}
+
+// TestNavyBodyFatMonotonic: more waist at a fixed frame must read as more fat.
+func TestNavyBodyFatMonotonic(t *testing.T) {
+	prev := 0.0
+	for waist := 75.0; waist <= 120; waist += 5 {
+		got, err := NavyBodyFat(Male, 178, 38, waist, 0)
+		if err != nil {
+			t.Fatalf("waist %.0f: %v", waist, err)
+		}
+		if got <= prev {
+			t.Fatalf("body fat should rise with waist: %.0f cm gave %.1f after %.1f", waist, got, prev)
+		}
+		prev = got
+	}
+}

@@ -355,3 +355,61 @@ test pins the first result for nine common queries, which is the record of what
 Search runs on the server rather than over a copy downloaded to the phone. The
 library would otherwise have to be shipped, stored and kept in step with the
 service, and a query round-trip is cheaper than all three.
+
+## The profile screen, and why it came before more features
+
+The rank engine shipped with endpoints for body composition, onboarding claims
+and skill unlocks, and no way to reach any of them from the phone. The Settings
+dialog held a base URL and a token. That is worse than it sounds, because lean
+body mass sets *every* strength reference in the system and MIGHT is the largest
+single weight in RS at 0.40 — so with nothing entered, the most important
+attribute was being computed against the placeholder reference lifter, and body
+fat was a BMI estimate *of a placeholder bodyweight*.
+
+Two more terms were reading zero purely because there was nowhere to type them:
+training age is 25% of DISCIPLINE, and VO₂max is 30% of VIGOR.
+
+Measured on a copy of a real database with three logged sessions, filling in the
+profile moved the rank four rungs and roughly doubled confidence:
+
+```
+before   BLOODED   RS 43.0   confidence 24%
+         MIGHT 78  DOM 12  FRAME 51  VIGOR 11  DISC  7  MAST 2
+
+after    RAVAGER   RS 48.4   confidence 49%
+         MIGHT 64  DOM 12  FRAME 98  VIGOR 28  DISC 25  MAST 2
+```
+
+Note MIGHT *fell*, from 78 to 64, and that is the point. The old figure was
+flattering because it assumed a much lighter lifter: a real bodyweight raises
+lean mass, which raises every reference load, which lowers the pattern scores
+honestly. A rank computed from a body nobody entered is not a low rank, it is a
+meaningless one.
+
+The screen therefore leads with what is missing and shows the derived numbers —
+lean mass, FFMI, and the load that scores 100 on each pattern — beside the
+inputs. Watching the bench reference move when you enter your real weight is
+what makes the LBM-versus-bodyweight split legible instead of theoretical.
+
+The tape-method arithmetic lives on the server. It is the US Navy formula from
+v1.0 §2.1, it takes a logarithm of (waist − neck), and a mistyped waist smaller
+than the neck yields NaN — which would silently poison lean mass and every
+reference downstream. One implementation, bounds-checked, with the rejection
+cases under test.
+
+### A one-connection deadlock, found by using the feature
+
+Building this surfaced a bug that would have bricked the service permanently.
+
+The store caps SQLite at a single connection. `AwardVerification` looped over
+`SELECT skill FROM skill_unlocks` and issued the Blood `INSERT` *inside* that
+loop — so the INSERT waited for a connection the SELECT was holding. It worked
+for as long as the table was empty, because `rows.Next()` returned false
+immediately and released the connection, and it hung the whole process the first
+time a user unlocked a skill. Every later request then queued behind it forever.
+
+It is fixed by reading the skills into memory and closing the cursor before
+writing anything, and an audit found no other site with the same shape. The
+regression test runs the computation on a goroutine with a timeout, because the
+failure mode is a hang rather than an error — verified to fail against the old
+code before the fix was restored.

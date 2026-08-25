@@ -6,11 +6,13 @@
 package api
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -64,6 +66,8 @@ func (s *Server) Routes() http.Handler {
 	// Berserk rank system inputs. The engine reads body composition, onboarding
 	// self-reports and skill unlocks, and none of them can be derived from set
 	// rows, so each needs a way in.
+	mux.Handle("GET /v1/profile", s.auth(http.HandlerFunc(s.handleGetProfile)))
+	mux.Handle("POST /v1/profile", s.auth(http.HandlerFunc(s.handleSetProfile)))
 	mux.Handle("POST /v1/body", s.auth(http.HandlerFunc(s.handleBody)))
 	mux.Handle("POST /v1/claims", s.auth(http.HandlerFunc(s.handleClaims)))
 	mux.Handle("POST /v1/skills", s.auth(http.HandlerFunc(s.handleSkills)))
@@ -181,11 +185,244 @@ func (s *Server) handleRank(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rk)
 }
 
+// profileResponse is everything the profile screen renders: what the user
+// typed, what the engine derived from it, and what evidence exists.
+//
+// The derived half matters as much as the raw half. Lean body mass sets every
+// strength reference in the system, so a user needs to see the number their
+// rank is actually built on -- and whether it came from a measurement or a
+// guess -- rather than only the inputs they supplied.
+type profileResponse struct {
+	HeightCm       float64 `json:"height_cm"`
+	BodyweightKg   float64 `json:"bodyweight_kg"`
+	BodyfatPct     float64 `json:"bodyfat_pct"`
+	BFSource       string  `json:"bf_source"`
+	Sex            string  `json:"sex"`
+	TrainingMonths float64 `json:"training_months"`
+	VO2maxEst      float64 `json:"vo2max_est"`
+	SessionMinutes float64 `json:"avg_session_minutes"`
+	GoalProfile    string  `json:"goal_profile"`
+
+	// Derived.
+	LBMKg     float64 `json:"lbm_kg"`
+	FFMIAdj   float64 `json:"ffmi_adj"`
+	Estimated bool    `json:"estimated"`
+	Frozen    bool    `json:"frozen"`
+
+	// Missing names the inputs that are costing the user score right now, so
+	// the screen can say which field to fill rather than listing all of them
+	// with equal weight.
+	Missing []string      `json:"missing,omitempty"`
+	Claims  []claimOut    `json:"claims"`
+	Skills  []skillOut    `json:"skills"`
+	Refs    []referenceKg `json:"references"`
+}
+
+type claimOut struct {
+	Pattern string  `json:"pattern"`
+	Name    string  `json:"name"`
+	E1RMKg  float64 `json:"e1rm_kg"`
+	Lift    string  `json:"lift"`
+}
+
+type skillOut struct {
+	Skill    string `json:"skill"`
+	Unlocked bool   `json:"unlocked"`
+}
+
+// referenceKg is the load that scores 100 on each pattern for this body. It is
+// the most concrete thing the profile can show: change your weight or body fat
+// and these move, which makes the LBM/bodyweight split visible instead of
+// theoretical.
+type referenceKg struct {
+	Pattern string  `json:"pattern"`
+	Name    string  `json:"name"`
+	RefKg   float64 `json:"ref_kg"`
+}
+
+func (s *Server) handleGetProfile(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	p, err := berserk.LoadProfile(ctx, s.Store, time.Now())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	out := profileResponse{
+		HeightCm:       p.HeightCm,
+		BodyweightKg:   round1(p.BodyweightKg),
+		BodyfatPct:     round1(p.BodyfatPct),
+		BFSource:       p.BFSource,
+		Sex:            s.Store.Setting(ctx, "sex", "male"),
+		TrainingMonths: p.TrainingMonths,
+		VO2maxEst:      p.VO2maxEst,
+		SessionMinutes: p.SessionMinutes,
+		GoalProfile:    p.GoalProfile,
+		LBMKg:          round1(p.LBMKg),
+		FFMIAdj:        round1(p.FFMIAdj),
+		Estimated:      p.Estimated,
+		Frozen:         p.Frozen,
+	}
+
+	// Each of these is a term reading zero or a guess purely because nothing
+	// was entered, which is different from a term reading low because of how
+	// someone trains.
+	if s.Store.Setting(ctx, "bodyweight_kg", "") == "" {
+		out.Missing = append(out.Missing, "bodyweight_kg")
+	}
+	if p.Estimated {
+		out.Missing = append(out.Missing, "bodyfat_pct")
+	}
+	if s.Store.Setting(ctx, "height_cm", "") == "" {
+		out.Missing = append(out.Missing, "height_cm")
+	}
+	if p.TrainingMonths <= 0 {
+		out.Missing = append(out.Missing, "training_months")
+	}
+	if p.VO2maxEst <= 0 {
+		out.Missing = append(out.Missing, "vo2max_est")
+	}
+
+	for _, pat := range berserk.Patterns {
+		out.Refs = append(out.Refs, referenceKg{
+			Pattern: string(pat), Name: pat.Display(),
+			RefKg: round1(berserk.Ref(p, pat)),
+		})
+	}
+
+	// Each cursor is drained and closed before the next query opens. The store
+	// allows one connection, so overlapping cursors are a deadlock waiting for
+	// a loop that exits early.
+	claims := map[string]claimOut{}
+	if rows, err := s.Store.DB().QueryContext(ctx, `SELECT pattern, e1rm_kg, lift FROM pattern_claims`); err == nil {
+		for rows.Next() {
+			var c claimOut
+			if err := rows.Scan(&c.Pattern, &c.E1RMKg, &c.Lift); err == nil {
+				claims[c.Pattern] = c
+			}
+		}
+		rows.Close()
+	}
+	for _, pat := range berserk.Patterns {
+		c := claims[string(pat)]
+		c.Pattern, c.Name = string(pat), pat.Display()
+		out.Claims = append(out.Claims, c)
+	}
+
+	unlocked := map[string]bool{}
+	if srows, err := s.Store.DB().QueryContext(ctx, `SELECT skill FROM skill_unlocks`); err == nil {
+		for srows.Next() {
+			var k string
+			if err := srows.Scan(&k); err == nil {
+				unlocked[k] = true
+			}
+		}
+		srows.Close()
+	}
+	for _, sk := range berserk.Skills {
+		out.Skills = append(out.Skills, skillOut{Skill: sk, Unlocked: unlocked[sk]})
+	}
+
+	writeJSON(w, http.StatusOK, out)
+}
+
+type setProfileRequest struct {
+	HeightCm       *float64 `json:"height_cm,omitempty"`
+	Sex            *string  `json:"sex,omitempty"`
+	TrainingMonths *float64 `json:"training_months,omitempty"`
+	VO2maxEst      *float64 `json:"vo2max_est,omitempty"`
+	SessionMinutes *float64 `json:"avg_session_minutes,omitempty"`
+	GoalProfile    *string  `json:"goal_profile,omitempty"`
+}
+
+func (s *Server) handleSetProfile(w http.ResponseWriter, r *http.Request) {
+	var req setProfileRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	ctx := r.Context()
+
+	// Bounds are rejections, not clamps. Silently correcting a typo hides it,
+	// and every one of these moves a strength reference or an attribute.
+	set := func(key string, v *float64, lo, hi float64) error {
+		if v == nil {
+			return nil
+		}
+		if *v < lo || *v > hi {
+			return fmt.Errorf("%s must be between %g and %g", key, lo, hi)
+		}
+		return s.Store.SetSetting(ctx, key, strconv.FormatFloat(*v, 'f', -1, 64))
+	}
+
+	if err := set("height_cm", req.HeightCm, 120, 230); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := set("training_months", req.TrainingMonths, 0, 900); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := set("vo2max_est", req.VO2maxEst, 15, 90); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := set("avg_session_minutes", req.SessionMinutes, 15, 240); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.Sex != nil {
+		if *req.Sex != "male" && *req.Sex != "female" {
+			writeErr(w, http.StatusBadRequest, errors.New(`sex must be "male" or "female"`))
+			return
+		}
+		if err := s.Store.SetSetting(ctx, "sex", *req.Sex); err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	if req.GoalProfile != nil {
+		switch *req.GoalProfile {
+		case "balanced", "power", "physique":
+		default:
+			writeErr(w, http.StatusBadRequest, errors.New("goal_profile must be balanced, power or physique"))
+			return
+		}
+		if err := s.Store.SetSetting(ctx, "goal_profile", *req.GoalProfile); err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+}
+
+func round1(v float64) float64 { return math.Round(v*10) / 10 }
+
+func settingFloat(ctx context.Context, st *store.Store, key string, def float64) float64 {
+	v := st.Setting(ctx, key, "")
+	if v == "" {
+		return def
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return def
+	}
+	return f
+}
+
 type bodyRequest struct {
 	Date         string   `json:"date,omitempty"` // YYYY-MM-DD, defaults to today
 	BodyweightKg float64  `json:"bodyweight_kg"`
 	BodyfatPct   *float64 `json:"bodyfat_pct,omitempty"`
 	Source       string   `json:"bf_source,omitempty"` // dexa|caliper|navy|estimate
+
+	// Tape measurements, centimetres. When bodyfat_pct is absent and these are
+	// present the server computes it. Doing the arithmetic here rather than on
+	// the phone keeps one implementation of the formula, and it is the formula
+	// most likely to be got wrong: it takes a logarithm of (waist - neck).
+	NeckCm  float64 `json:"neck_cm,omitempty"`
+	WaistCm float64 `json:"waist_cm,omitempty"`
+	HipCm   float64 `json:"hip_cm,omitempty"`
 }
 
 func (s *Server) handleBody(w http.ResponseWriter, r *http.Request) {
@@ -204,6 +441,25 @@ func (s *Server) handleBody(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, errors.New("bodyfat_pct must be between 3 and 60"))
 		return
 	}
+
+	// Tape method, when no direct measurement was given. It needs height, which
+	// comes from the profile rather than being asked for twice.
+	if req.BodyfatPct == nil && req.WaistCm > 0 && req.NeckCm > 0 {
+		h := settingFloat(r.Context(), s.Store, "height_cm", 0)
+		if h <= 0 {
+			writeErr(w, http.StatusBadRequest,
+				errors.New("set your height in the profile before using the tape method"))
+			return
+		}
+		sex := berserk.Sex(s.Store.Setting(r.Context(), "sex", "male"))
+		bf, err := berserk.NavyBodyFat(sex, h, req.NeckCm, req.WaistCm, req.HipCm)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		req.BodyfatPct = &bf
+		req.Source = "navy"
+	}
 	date := req.Date
 	if date == "" {
 		date = s.Store.LocalDate(time.Now())
@@ -215,7 +471,14 @@ func (s *Server) handleBody(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "recorded", "date": date})
+	// Echo the computed body fat so a tape entry shows the user the number it
+	// derived rather than making them refetch to find out.
+	out := map[string]any{"status": "recorded", "date": date}
+	if req.BodyfatPct != nil {
+		out["bodyfat_pct"] = *req.BodyfatPct
+		out["bf_source"] = req.Source
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 type claimsRequest struct {

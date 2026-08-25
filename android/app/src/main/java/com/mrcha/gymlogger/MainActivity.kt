@@ -19,6 +19,7 @@ import com.google.firebase.messaging.FirebaseMessaging
 import com.mrcha.gymlogger.net.ApiClient
 import com.mrcha.gymlogger.net.LogResult
 import com.mrcha.gymlogger.net.MuscleReport
+import com.mrcha.gymlogger.net.Profile
 import com.mrcha.gymlogger.net.Rank
 import com.mrcha.gymlogger.net.Recommendation
 import com.mrcha.gymlogger.push.GymMessagingService
@@ -38,6 +39,8 @@ class MainViewModel : ViewModel() {
     var error by mutableStateOf<String?>(null)
     var showSettings by mutableStateOf(false)
     var showLibrary by mutableStateOf(false)
+    var showProfile by mutableStateOf(false)
+    var profile by mutableStateOf<Profile?>(null)
     var library by mutableStateOf(LibraryState())
 
     /** Debounce token: only the newest search is allowed to publish results. */
@@ -65,6 +68,91 @@ class MainViewModel : ViewModel() {
             client.rank().onSuccess { rank = it }
             client.next().onSuccess { next = it }
             client.muscles().onSuccess { muscles = it }
+        }
+    }
+
+    // ---------- profile ----------
+
+    fun openProfile() {
+        showProfile = true
+        loadProfile()
+    }
+
+    private fun loadProfile() {
+        val client = api ?: return
+        viewModelScope.launch {
+            client.profile()
+                .onSuccess { profile = it }
+                .onFailure { error = it.message }
+        }
+    }
+
+    /**
+     * Every profile save reloads the profile AND the rank.
+     *
+     * Entering a real bodyweight changes lean mass, which changes every
+     * strength reference, which changes MIGHT and therefore the rank. Leaving a
+     * stale rank on screen after that would make the app look like it ignored
+     * the input.
+     */
+    private fun afterProfileWrite() {
+        loadProfile()
+        refresh()
+    }
+
+    fun saveProfile(height: Double?, sex: String?, months: Double?, vo2: Double?, goal: String?) {
+        val client = api ?: return
+        busy = true
+        viewModelScope.launch {
+            client.saveProfile(height, sex, months, vo2, goalProfile = goal)
+                .onSuccess { afterProfileWrite() }
+                .onFailure { error = it.message }
+            busy = false
+        }
+    }
+
+    fun saveBody(weightKg: Double, bodyfat: Double?) {
+        val client = api ?: return
+        busy = true
+        viewModelScope.launch {
+            client.saveBody(weightKg, bodyfat, if (bodyfat != null) "caliper" else null)
+                .onSuccess { afterProfileWrite() }
+                .onFailure { error = it.message }
+            busy = false
+        }
+    }
+
+    fun saveBodyTape(weightKg: Double, neck: Double, waist: Double, hip: Double?) {
+        val client = api ?: return
+        busy = true
+        viewModelScope.launch {
+            client.saveBodyTape(weightKg, neck, waist, hip)
+                .onSuccess {
+                    // Report the derived number: a tape entry is the one case
+                    // where the user cannot predict what they just saved.
+                    error = "Body fat ${"%.1f".format(it.bodyfatPct)}% recorded"
+                    afterProfileWrite()
+                }
+                .onFailure { error = it.message }
+            busy = false
+        }
+    }
+
+    fun saveClaim(pattern: String, e1rm: Double, lift: String) {
+        val client = api ?: return
+        viewModelScope.launch {
+            client.saveClaims(listOf(Triple(pattern, e1rm, lift)))
+                .onSuccess { afterProfileWrite() }
+                .onFailure { error = it.message }
+        }
+    }
+
+    fun toggleSkill(skill: String, unlocked: Boolean) {
+        val client = api ?: return
+        viewModelScope.launch {
+            client.saveSkill(skill, unlocked)
+                .onSuccess { afterProfileWrite() }
+                .onFailure { error = it.message }
         }
     }
 

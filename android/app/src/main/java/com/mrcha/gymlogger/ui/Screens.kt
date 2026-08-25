@@ -7,7 +7,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -57,6 +58,9 @@ fun GymApp(
             TopAppBar(
                 title = { Text("Gym Logger") },
                 actions = {
+                    IconButton(onClick = { vm.openProfile() }) {
+                        Icon(Icons.Default.Person, contentDescription = "Profile")
+                    }
                     IconButton(onClick = { vm.openLibrary() }) {
                         Icon(Icons.Default.FitnessCenter, contentDescription = "Exercises")
                     }
@@ -91,6 +95,19 @@ fun GymApp(
 
             Spacer(Modifier.height(24.dp))
         }
+    }
+
+    if (vm.showProfile) {
+        ProfileScreen(
+            profile = vm.profile,
+            busy = vm.busy,
+            onSaveProfile = vm::saveProfile,
+            onSaveBody = vm::saveBody,
+            onSaveTape = vm::saveBodyTape,
+            onSaveClaim = vm::saveClaim,
+            onToggleSkill = vm::toggleSkill,
+            onClose = { vm.showProfile = false },
+        )
     }
 
     if (vm.showLibrary) {
@@ -384,7 +401,7 @@ private fun LogInput(
                         strokeWidth = 2.dp,
                     )
                 } else {
-                    Icon(Icons.Default.Send, contentDescription = null)
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text("Log it")
                 }

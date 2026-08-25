@@ -245,21 +245,42 @@ func (l *Ledger) AwardVerification(ctx context.Context, asOf time.Time, scores [
 		}
 	}
 
-	rows, err := l.st.DB().QueryContext(ctx, `SELECT skill FROM skill_unlocks`)
+	// The skills are read into memory and the cursor closed BEFORE any award is
+	// written. The store caps the pool at a single connection, so an INSERT
+	// issued while a SELECT cursor is still open waits for a connection that
+	// the SELECT itself is holding, and the process deadlocks permanently.
+	//
+	// This is not theoretical: written the obvious way, this function worked
+	// for as long as skill_unlocks was empty -- rows.Next() returned false
+	// immediately and released the connection -- and hung the whole service the
+	// first time a user unlocked a skill.
+	skills, err := l.unlockedSkills(ctx)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var s string
-		if err := rows.Scan(&s); err != nil {
-			return err
-		}
-		if _, err := l.Grant(ctx, "skill:"+s, "skill", BloodVerification, on, s+" unlocked"); err != nil {
+	for _, sk := range skills {
+		if _, err := l.Grant(ctx, "skill:"+sk, "skill", BloodVerification, on, sk+" unlocked"); err != nil {
 			return err
 		}
 	}
-	return rows.Err()
+	return nil
+}
+
+func (l *Ledger) unlockedSkills(ctx context.Context) ([]string, error) {
+	rows, err := l.st.DB().QueryContext(ctx, `SELECT skill FROM skill_unlocks`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
 }
 
 // Milestone is a named, once-per-lifetime crossing.

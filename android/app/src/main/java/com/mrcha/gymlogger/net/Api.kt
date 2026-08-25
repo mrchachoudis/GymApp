@@ -178,6 +178,87 @@ data class Facets(
 )
 
 @Serializable
+data class PatternRef(
+    val pattern: String = "",
+    val name: String = "",
+    @SerialName("ref_kg") val refKg: Double = 0.0,
+)
+
+@Serializable
+data class PatternClaim(
+    val pattern: String = "",
+    val name: String = "",
+    @SerialName("e1rm_kg") val e1rmKg: Double = 0.0,
+    val lift: String = "",
+)
+
+@Serializable
+data class SkillState(val skill: String = "", val unlocked: Boolean = false)
+
+@Serializable
+data class Profile(
+    @SerialName("height_cm") val heightCm: Double = 0.0,
+    @SerialName("bodyweight_kg") val bodyweightKg: Double = 0.0,
+    @SerialName("bodyfat_pct") val bodyfatPct: Double = 0.0,
+    @SerialName("bf_source") val bfSource: String = "",
+    val sex: String = "male",
+    @SerialName("training_months") val trainingMonths: Double = 0.0,
+    @SerialName("vo2max_est") val vo2maxEst: Double = 0.0,
+    @SerialName("avg_session_minutes") val sessionMinutes: Double = 0.0,
+    @SerialName("goal_profile") val goalProfile: String = "balanced",
+    @SerialName("lbm_kg") val lbmKg: Double = 0.0,
+    @SerialName("ffmi_adj") val ffmiAdj: Double = 0.0,
+    val estimated: Boolean = false,
+    val frozen: Boolean = false,
+    // Inputs costing score right now purely because nothing was entered.
+    val missing: List<String> = emptyList(),
+    val claims: List<PatternClaim> = emptyList(),
+    val skills: List<SkillState> = emptyList(),
+    val references: List<PatternRef> = emptyList(),
+)
+
+@Serializable
+data class BodyResult(
+    val status: String = "",
+    val date: String = "",
+    @SerialName("bodyfat_pct") val bodyfatPct: Double = 0.0,
+    @SerialName("bf_source") val bfSource: String = "",
+)
+
+@Serializable
+private data class ProfileUpdate(
+    @SerialName("height_cm") val heightCm: Double? = null,
+    val sex: String? = null,
+    @SerialName("training_months") val trainingMonths: Double? = null,
+    @SerialName("vo2max_est") val vo2maxEst: Double? = null,
+    @SerialName("avg_session_minutes") val sessionMinutes: Double? = null,
+    @SerialName("goal_profile") val goalProfile: String? = null,
+)
+
+@Serializable
+private data class BodyUpdate(
+    @SerialName("bodyweight_kg") val bodyweightKg: Double,
+    @SerialName("bodyfat_pct") val bodyfatPct: Double? = null,
+    @SerialName("bf_source") val bfSource: String? = null,
+    @SerialName("neck_cm") val neckCm: Double? = null,
+    @SerialName("waist_cm") val waistCm: Double? = null,
+    @SerialName("hip_cm") val hipCm: Double? = null,
+)
+
+@Serializable
+private data class ClaimIn(
+    val pattern: String,
+    @SerialName("e1rm_kg") val e1rmKg: Double,
+    val lift: String = "",
+)
+
+@Serializable
+private data class ClaimsUpdate(val claims: List<ClaimIn>)
+
+@Serializable
+private data class SkillsUpdate(val skills: Map<String, Boolean>)
+
+@Serializable
 data class LogResult(
     @SerialName("session_id") val sessionId: Long = 0,
     @SerialName("pending_id") val pendingId: Long = 0,
@@ -210,7 +291,14 @@ class ApiClient(
     private val baseUrl: String,
     private val authToken: String,
 ) {
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    // explicitNulls = false matters for the profile: the server treats an absent
+    // field as "leave this setting alone", so a partial save must omit the rest
+    // rather than send nulls that would read as an instruction to clear them.
+    private val json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+        explicitNulls = false
+    }
 
     // The log endpoint waits on two model calls, so the read timeout is
     // deliberately long. The connect timeout stays short so an unreachable
@@ -251,6 +339,51 @@ class ApiClient(
     }
 
     suspend fun facets(): Result<Facets> = get("/v1/exercises/facets")
+
+    suspend fun profile(): Result<Profile> = get("/v1/profile")
+
+    suspend fun saveProfile(
+        heightCm: Double? = null,
+        sex: String? = null,
+        trainingMonths: Double? = null,
+        vo2max: Double? = null,
+        sessionMinutes: Double? = null,
+        goalProfile: String? = null,
+    ): Result<Unit> = post<ProfileUpdate, Unit>(
+        "/v1/profile",
+        ProfileUpdate(heightCm, sex, trainingMonths, vo2max, sessionMinutes, goalProfile),
+    ).map { }
+
+    /** Direct body-fat entry, or none at all when only the scale is known. */
+    suspend fun saveBody(
+        bodyweightKg: Double,
+        bodyfatPct: Double? = null,
+        source: String? = null,
+    ): Result<BodyResult> = post("/v1/body", BodyUpdate(bodyweightKg, bodyfatPct, source))
+
+    /**
+     * Tape method. The server owns the formula and returns the body fat it
+     * derived, so the phone never reimplements a calculation that takes a
+     * logarithm of (waist - neck).
+     */
+    suspend fun saveBodyTape(
+        bodyweightKg: Double,
+        neckCm: Double,
+        waistCm: Double,
+        hipCm: Double? = null,
+    ): Result<BodyResult> = post(
+        "/v1/body",
+        BodyUpdate(bodyweightKg, neckCm = neckCm, waistCm = waistCm, hipCm = hipCm),
+    )
+
+    suspend fun saveClaims(claims: List<Triple<String, Double, String>>): Result<Unit> =
+        post<ClaimsUpdate, Unit>(
+            "/v1/claims",
+            ClaimsUpdate(claims.map { ClaimIn(it.first, it.second, it.third) }),
+        ).map { }
+
+    suspend fun saveSkill(skill: String, unlocked: Boolean): Result<Unit> =
+        post<SkillsUpdate, Unit>("/v1/skills", SkillsUpdate(mapOf(skill to unlocked))).map { }
 
     /**
      * URL for a demo image or animation. Filenames come from the library, so
