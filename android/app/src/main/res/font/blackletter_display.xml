@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Grenze Gotisch, SIL Open Font License 1.1 (Google Fonts). A variable font,
+     so the weight axis is set at use rather than by shipping several files. -->
+<font-family xmlns:android="http://schemas.android.com/apk/res/android">
+    <font
+        android:font="@font/blackletter"
+        android:fontStyle="normal"
+        android:fontWeight="700" />
+</font-family>

@@ -23,7 +23,9 @@ import com.mrcha.gymlogger.net.Profile
 import com.mrcha.gymlogger.net.Rank
 import com.mrcha.gymlogger.net.Recommendation
 import com.mrcha.gymlogger.push.GymMessagingService
+import com.mrcha.gymlogger.ui.ConnectionState
 import com.mrcha.gymlogger.ui.GymApp
+import com.mrcha.gymlogger.ui.Rail
 import com.mrcha.gymlogger.ui.LibraryState
 import com.mrcha.gymlogger.ui.GymLoggerTheme
 import kotlinx.coroutines.launch
@@ -38,6 +40,16 @@ class MainViewModel : ViewModel() {
     var muscles by mutableStateOf<MuscleReport?>(null)
     var error by mutableStateOf<String?>(null)
     var showSettings by mutableStateOf(false)
+    var rail by mutableStateOf(Rail.Log)
+    var showVerdict by mutableStateOf(false)
+
+    /**
+     * Whether the phone can reach the service.
+     *
+     * Tracked explicitly because the alternative is an empty page, which reads
+     * identically to "you have not trained yet" and to "the build is broken".
+     */
+    var connection by mutableStateOf(ConnectionState.Unknown)
     var showLibrary by mutableStateOf(false)
     var showProfile by mutableStateOf(false)
     var profile by mutableStateOf<Profile?>(null)
@@ -63,9 +75,23 @@ class MainViewModel : ViewModel() {
     fun authHeader(): String = api?.bearer ?: ""
 
     fun refresh() {
-        val client = api ?: return
+        val client = api ?: run {
+            connection = ConnectionState.NotConfigured
+            return
+        }
         viewModelScope.launch {
-            client.rank().onSuccess { rank = it }
+            // Rank is the probe: if it fails, the other two will too, and one
+            // banner is more useful than three silent empties.
+            client.rank()
+                .onSuccess {
+                    rank = it
+                    connection = ConnectionState.Ok
+                }
+                .onFailure {
+                    connection = ConnectionState.Unreachable
+                    error = it.message
+                }
+            if (connection != ConnectionState.Ok) return@launch
             client.next().onSuccess { next = it }
             client.muscles().onSuccess { muscles = it }
         }
@@ -251,6 +277,10 @@ class MainViewModel : ViewModel() {
                     // be corrected and resent rather than retyped.
                     if (result.sessionId != 0L) draft = ""
                     result.rank?.let { rank = it }
+                    // The verdict takes the screen. It is the answer to the
+                    // thing the user just did, and burying it under the input
+                    // box is what made it easy to miss.
+                    showVerdict = true
                     refresh()
                 }
                 .onFailure { error = it.message ?: "Could not reach the server" }
@@ -266,6 +296,7 @@ class MainViewModel : ViewModel() {
                 .onSuccess {
                     lastResult = it
                     draft = ""
+                    showVerdict = true
                     refresh()
                 }
                 .onFailure { error = it.message ?: "Could not confirm" }

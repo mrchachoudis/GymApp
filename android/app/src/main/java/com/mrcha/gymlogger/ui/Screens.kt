@@ -60,57 +60,78 @@ fun GymApp(
     Scaffold(
         containerColor = Forge.Ground,
         snackbarHost = { SnackbarHost(snackbar) },
-        topBar = {
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Forge.Ground,
-                    titleContentColor = Forge.Bone,
-                    actionIconContentColor = Forge.Ash,
-                ),
-                title = {
-                    Text(
-                        "GYM LOGGER",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = Forge.Bone,
-                    )
-                },
-                actions = {
-                    IconButton(onClick = { vm.openProfile() }) {
-                        Icon(Icons.Default.Person, contentDescription = "Profile")
-                    }
-                    IconButton(onClick = { vm.openLibrary() }) {
-                        Icon(Icons.Default.FitnessCenter, contentDescription = "Exercises")
-                    }
-                    IconButton(onClick = { vm.showSettings = true }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
-                    }
-                },
-            )
-        },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .padding(padding)
-                .padding(horizontal = 16.dp)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            vm.rank?.let { RankCard(it) }
-            vm.next?.let { NextSessionCard(it) }
-            vm.muscles?.let { MuscleCard(it) }
-
-            LogInput(
-                value = vm.draft,
-                busy = vm.busy,
-                onChange = { vm.draft = it },
-                onMic = onMic,
-                onSubmit = { vm.submit() },
+        Row(Modifier.padding(padding).fillMaxSize()) {
+            SideRail(
+                selected = vm.rail,
+                onSelect = { tab ->
+                    vm.rail = tab
+                    when (tab) {
+                        Rail.Lifts -> vm.openLibrary()
+                        Rail.RankTab -> vm.openProfile()
+                        else -> Unit
+                    }
+                },
             )
+            RailDivider()
 
-            vm.lastResult?.let { ResultSection(it) { id -> vm.confirmPending(id) } }
+            Column(
+                Modifier
+                    .weight(1f)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                // The wordmark sits above the content rather than in a title
+                // bar, so the rank name below it keeps the full width.
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp, vertical = 14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Blood Ledger",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = Forge.Parchment,
+                    )
+                    IconButton(onClick = { vm.showSettings = true }) {
+                        Icon(
+                            Icons.Default.Settings,
+                            contentDescription = "Settings",
+                            tint = Forge.Slate,
+                        )
+                    }
+                }
 
-            Spacer(Modifier.height(24.dp))
+                when (vm.rail) {
+                    Rail.Ledger -> LedgerTab(vm)
+                    else -> LogScreen(
+                        rank = vm.rank,
+                        next = vm.next,
+                        muscles = vm.muscles,
+                        draft = vm.draft,
+                        busy = vm.busy,
+                        connection = vm.connection,
+                        onDraftChange = { vm.draft = it },
+                        onMic = onMic,
+                        onSubmit = { vm.submit() },
+                        onRetry = { vm.refresh() },
+                    )
+                }
+            }
+        }
+    }
+
+    // The session verdict takes the whole screen when a log lands, which is the
+    // mockup's second panel: a result worth reading, not a card to scroll past.
+    vm.lastResult?.let { result ->
+        if (vm.showVerdict) {
+            VerdictScreen(
+                result = result,
+                onConfirm = { id -> vm.confirmPending(id) },
+                onClose = { vm.showVerdict = false },
+            )
         }
     }
 
@@ -123,7 +144,10 @@ fun GymApp(
             onSaveTape = vm::saveBodyTape,
             onSaveClaim = vm::saveClaim,
             onToggleSkill = vm::toggleSkill,
-            onClose = { vm.showProfile = false },
+            onClose = {
+                vm.showProfile = false
+                vm.rail = Rail.Log
+            },
         )
     }
 
@@ -135,7 +159,10 @@ fun GymApp(
             onQueryChange = vm::setLibraryQuery,
             onFilter = vm::setLibraryFilter,
             onLoadMore = vm::loadMoreExercises,
-            onClose = { vm.showLibrary = false },
+            onClose = {
+                vm.showLibrary = false
+                vm.rail = Rail.Log
+            },
         )
     }
 
@@ -148,6 +175,19 @@ fun GymApp(
                 onSettingsSaved()
             },
         )
+    }
+}
+
+/** LEDGER: the rank in full, with every attribute, pattern and gate. */
+@Composable
+private fun LedgerTab(vm: MainViewModel) {
+    Column(
+        Modifier.padding(horizontal = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        vm.rank?.let { RankCard(it) }
+        vm.lastResult?.let { ResultSection(it) { id -> vm.confirmPending(id) } }
+        Spacer(Modifier.height(32.dp))
     }
 }
 

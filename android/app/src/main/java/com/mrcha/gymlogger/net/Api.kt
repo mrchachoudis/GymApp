@@ -25,6 +25,10 @@ data class LiftEntry(
     @SerialName("is_weight_pr") val isWeightPR: Boolean = false,
     @SerialName("is_rep_pr") val isRepPR: Boolean = false,
     @SerialName("volume_today_kg") val volumeTodayKg: Double = 0.0,
+    // Omitted by the server above 8 reps, where Epley stops meaning anything,
+    // so this is genuinely nullable rather than defaulted to zero.
+    @SerialName("est_1rm_today") val est1RMToday: Double? = null,
+    @SerialName("est_1rm_previous") val est1RMPrevious: Double? = null,
 )
 
 @Serializable

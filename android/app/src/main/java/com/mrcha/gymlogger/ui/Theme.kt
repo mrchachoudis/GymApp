@@ -5,8 +5,10 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import com.mrcha.gymlogger.R
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 
@@ -63,6 +65,15 @@ private val ForgeColors = darkColorScheme(
     outlineVariant = Forge.Hairline,
 )
 
+/**
+ * The display face: Grenze Gotisch, SIL OFL (see assets/FONT_LICENSE.txt).
+ *
+ * It carries the whole identity of the design — the rank name, the session
+ * verdict, a lift's title — and it is used ONLY for those. A blackletter set at
+ * body size is unreadable, and one used everywhere stops meaning anything.
+ */
+val Display = FontFamily(Font(R.font.blackletter, FontWeight.Bold))
+
 /** Numbers that have to line up in a column. */
 val Ledger = TextStyle(
     fontFamily = FontFamily.Monospace,
@@ -74,11 +85,26 @@ val Ledger = TextStyle(
 private val ForgeType = Typography(
     // Rank names. Wide letterspacing so "BLACK SWORDSMAN" reads as an inscription
     // rather than a label.
-    headlineSmall = TextStyle(
-        fontFamily = FontFamily.Default,
+    // Rank names, session verdicts, lift titles. Blackletter, large, tight:
+    // the mockup sets these as an inscription rather than a heading.
+    headlineLarge = TextStyle(
+        fontFamily = Display,
         fontWeight = FontWeight.Bold,
-        fontSize = 22.sp,
-        letterSpacing = 2.sp,
+        fontSize = 46.sp,
+        lineHeight = 48.sp,
+        letterSpacing = 0.sp,
+    ),
+    headlineMedium = TextStyle(
+        fontFamily = Display,
+        fontWeight = FontWeight.Bold,
+        fontSize = 34.sp,
+        lineHeight = 36.sp,
+    ),
+    headlineSmall = TextStyle(
+        fontFamily = Display,
+        fontWeight = FontWeight.Bold,
+        fontSize = 26.sp,
+        lineHeight = 28.sp,
     ),
     titleLarge = TextStyle(
         fontWeight = FontWeight.SemiBold,
